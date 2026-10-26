@@ -1,0 +1,6 @@
+{
+  "name": "繁體中文 Hello",
+  "icon": "nf-md-format-font",
+  "exec": "/usr/bin/true",
+  "category": "a-font-review"
+}

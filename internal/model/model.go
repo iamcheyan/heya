@@ -121,7 +121,7 @@ type Theme struct {
 }
 
 func DefaultTheme() Theme {
-	return Theme{Background: "#0b0e14", Text: "#f2f4f8", Muted: "#8b94a7", Accent: "#ffc400", Selection: "#0f78d7", Font: "assets/JetBrainsMonoNerdFont-Regular.ttf", FontCJK: "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", Scale: 16}
+	return Theme{Background: "#0b0e14", Text: "#f2f4f8", Muted: "#8b94a7", Accent: "#ffc400", Selection: "#0f78d7", Font: "assets/JetBrainsMonoNerdFont-Regular.ttf", FontCJK: "/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf", Scale: 16}
 }
 func (t *Theme) Normalize() {
 	d := DefaultTheme()

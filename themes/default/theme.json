@@ -5,6 +5,6 @@
   "accent": "#ffc400",
   "selection": "#0f78d7",
   "font": "assets/JetBrainsMonoNerdFont-Regular.ttf",
-  "font_cjk": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+  "font_cjk": "/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf",
   "scale": 16
 }

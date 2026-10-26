@@ -1,0 +1,6 @@
+{
+  "name": "Hello World",
+  "icon": "nf-md-format-font",
+  "exec": "/usr/bin/true",
+  "category": "a-font-review"
+}

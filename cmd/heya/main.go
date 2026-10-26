@@ -32,6 +32,8 @@ type options struct {
 	iconsPath         string
 	inputPath         string
 	fontPath          string
+	cjkFontPath       string
+	scale             int
 	width             int
 	height            int
 	dumpDir           string
@@ -45,6 +47,8 @@ func main() {
 	flag.StringVar(&opts.iconsPath, "icons", "", "icon map JSON file (default: assets/icons.json)")
 	flag.StringVar(&opts.inputPath, "input", "", "input mapping JSON file (default: built-in mapping)")
 	flag.StringVar(&opts.fontPath, "font", "", "font file overriding the theme font")
+	flag.StringVar(&opts.cjkFontPath, "font-cjk", "", "CJK font file overriding the theme CJK font")
+	flag.IntVar(&opts.scale, "scale", 0, "font scale (8, 16 or 32) overriding the theme scale")
 	flag.IntVar(&opts.width, "width", 720, "window width")
 	flag.IntVar(&opts.height, "height", 480, "window height")
 	flag.StringVar(&opts.dumpDir, "dump", "", "render each page to PNG in this directory and exit")
@@ -82,7 +86,7 @@ func ensureDataRoot() {
 	if _, err := os.Stat(themePath); os.IsNotExist(err) {
 		theme := model.DefaultTheme()
 		theme.Font = "/usr/share/heya/assets/JetBrainsMonoNerdFont-Regular.ttf"
-		theme.FontCJK = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+		theme.FontCJK = "/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf"
 		if data, err := json.MarshalIndent(theme, "", "  "); err == nil {
 			_ = os.WriteFile(themePath, append(data, '\n'), 0o644)
 		}
@@ -119,13 +123,48 @@ func run(opts options) error {
 
 	l := launcher.New(rescan(), probe, icons)
 	l.AddPage("system", model.Page{Title: "System"})
-	l.AddPage("about", aboutPage(opts))
+	host := demoHost
+	if opts.dumpDir == "" {
+		host, _ = os.Hostname()
+	}
+	l.AddPage("about", aboutPage(opts, host))
 	l.Refresh = rescan
 
 	if opts.dumpDir != "" {
+		l.FreezeStatus(demoStatus())
 		return dumpPages(l, theme, icons, opts)
 	}
 	return eventLoop(l, handler, theme, icons, opts)
+}
+
+// demoHost and demoStatus label exported screenshots. A frame dump would
+// otherwise bake this machine's hostname, address and memory layout into images
+// that ship in a public repository, so the dump renders a neutral device.
+const demoHost = "heya-demo"
+
+func demoStatus() system.Status {
+	return system.Status{
+		Hostname:        demoHost,
+		BatteryPercent:  82,
+		BatteryKnown:    true,
+		Charging:        true,
+		ChargingKnown:   true,
+		TempC:           44.2,
+		TempKnown:       true,
+		MemAvailableMB:  6144,
+		MemTotalMB:      8192,
+		StorageFreeMB:   131072,
+		StorageTotalMB:  262144,
+		StorageKnown:    true,
+		WifiOn:          true,
+		WifiKnown:       true,
+		BtOn:            false,
+		BtKnown:         true,
+		Volume:          60,
+		VolumeKnown:     true,
+		Brightness:      80,
+		BrightnessKnown: true,
+	}
 }
 
 // appsPage appends the built-in navigation entries to the scanned apps.
@@ -137,8 +176,7 @@ func appsPage(page model.Page) model.Page {
 	return page
 }
 
-func aboutPage(opts options) model.Page {
-	host, _ := os.Hostname()
+func aboutPage(opts options, host string) model.Page {
 	return model.Page{
 		Title: "About",
 		Items: []model.Item{
@@ -173,6 +211,13 @@ func loadConfig(opts options) (model.Theme, model.Icons, input.Mapping, error) {
 	}
 	if opts.fontPath != "" {
 		theme.Font = opts.fontPath
+	}
+	if opts.cjkFontPath != "" {
+		theme.FontCJK = opts.cjkFontPath
+	}
+	if opts.scale > 0 {
+		theme.Scale = opts.scale
+		theme.Normalize()
 	}
 
 	icons := model.Icons{}
@@ -345,6 +390,30 @@ func runApp(path string, args []string, environment []string, directory string, 
 	}
 }
 
+// renderFontSample draws one specimen string in the title position, where the
+// mixed-font path is exercised, and writes it to path.
+func renderFontSample(screen *ui.UI, base ui.Frame, sample, path string) error {
+	frame := base
+	frame.Title = sample
+	frame.Status = []string{"HEYA"}
+	frame.Hint = ""
+	frame.Message = ""
+	frame.Rows = nil
+	frame.Selected = 0
+	frame.Offset = 0
+	if err := screen.Render(frame); err != nil {
+		return err
+	}
+	if err := screen.SavePNG(path); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %s\n", path)
+	return nil
+}
+
+// fontSpecimens cover each script the CJK fallback must render.
+var fontSpecimens = []string{"Hello World", "你好世界 Hello", "繁體中文 Hello", "日本語テスト Hello", "한국어 테스트 Hello", "你好 Hello 日本語"}
+
 // dumpPages renders every page to PNG, driving navigation through the same
 // actions the UI uses. It needs no display (SDL dummy driver).
 func dumpPages(l *launcher.Launcher, theme model.Theme, icons model.Icons, opts options) error {
@@ -374,9 +443,18 @@ func dumpPages(l *launcher.Launcher, theme model.Theme, icons model.Icons, opts 
 		return err
 	}
 
-	l.Handle(input.Down)
+	// One screenshot per script so a reviewer can confirm each glyph set.
+	for i, sample := range fontSpecimens {
+		path := filepath.Join(opts.dumpDir, fmt.Sprintf("font-sample-%02d.png", i+1))
+		if err := renderFontSample(screen, l.Frame(), sample, path); err != nil {
+			return err
+		}
+	}
+
+	for i := 0; i < len(l.Frame().Rows)-2; i++ {
+		l.Handle(input.Down)
+	}
 	l.Handle(input.Confirm)
-	l.Handle(input.Down)
 	if err := render("02-system"); err != nil {
 		return err
 	}

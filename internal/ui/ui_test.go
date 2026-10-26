@@ -12,7 +12,12 @@ func TestRenderFrameWritesPNG(t *testing.T) {
 	os.Setenv("SDL_VIDEODRIVER", "dummy")
 	theme := model.DefaultTheme()
 	theme.Font = filepath.Join("..", "..", "assets", "JetBrainsMonoNerdFont-Regular.ttf")
-	theme.FontCJK = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+	theme.FontCJK = ""
+	if got := resolveCJKFont(theme); got == "" {
+		t.Skip("no CJK font available")
+	} else {
+		theme.FontCJK = got
+	}
 	if _, err := os.Stat(theme.Font); err != nil {
 		t.Skipf("font not available: %v", err)
 	}
@@ -45,6 +50,72 @@ func TestRenderFrameWritesPNG(t *testing.T) {
 	}
 	if info.Size() < 1000 {
 		t.Fatalf("frame looks empty: %d bytes", info.Size())
+	}
+}
+
+// TestCJKCompositesVisibleInk guards the mixed-font composition path: a
+// run-by-run canvas that blits in the wrong direction, or loses per-run alpha,
+// produces a correctly-sized surface with no visible pixels.
+func TestCJKCompositesVisibleInk(t *testing.T) {
+	os.Setenv("SDL_VIDEODRIVER", "dummy")
+	theme := model.DefaultTheme()
+	theme.Font = filepath.Join("..", "..", "assets", "JetBrainsMonoNerdFont-Regular.ttf")
+	theme.FontCJK = ""
+	if got := resolveCJKFont(theme); got == "" {
+		t.Skip("no CJK font available")
+	} else {
+		theme.FontCJK = got
+	}
+	if _, err := os.Stat(theme.Font); err != nil {
+		t.Skipf("latin font not available: %v", err)
+	}
+	if _, err := os.Stat(theme.FontCJK); err != nil {
+		t.Skipf("CJK font not available: %v", err)
+	}
+
+	screen, err := Open(Options{Theme: theme, Icons: model.Icons{}, Width: 720, Height: 480, Hidden: true})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer screen.Close()
+
+	surface, err := screen.renderText("你好 Hello 日本語", screen.pal.text)
+	if err != nil {
+		t.Fatalf("renderText: %v", err)
+	}
+	defer surface.Free()
+
+	if surface.W < 60 {
+		t.Fatalf("composed surface too narrow: %d", surface.W)
+	}
+	ink := 0
+	pitch := int(surface.Pitch)
+	for y := 0; y < int(surface.H); y++ {
+		for x := 0; x < int(surface.W); x++ {
+			i := y*pitch + x*4
+			if i+3 < len(surface.Pixels()) && surface.Pixels()[i+3] > 32 {
+				ink++
+			}
+		}
+	}
+	if ink == 0 {
+		t.Fatal("mixed CJK/Latin composite has no opaque pixels; text would render invisible")
+	}
+	if ink < 100 {
+		t.Fatalf("only %d ink pixels; composition looks incomplete", ink)
+	}
+}
+
+// TestLatinUsesPrimaryFont keeps Nerd Font glyphs on the primary face so icons
+// are never replaced by the CJK fallback.
+func TestLatinUsesPrimaryFont(t *testing.T) {
+	if containsCJK("Hello World") || containsCJK("[A] Select") {
+		t.Fatal("latin text must not be routed to the CJK font")
+	}
+	for _, s := range []string{"你好世界", "繁體中文", "日本語", "한국어", "你好 Hello"} {
+		if !containsCJK(s) {
+			t.Fatalf("expected CJK routing for %q", s)
+		}
 	}
 }
 

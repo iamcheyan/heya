@@ -1,0 +1,6 @@
+{
+  "name": "你好 Hello 日本語",
+  "icon": "nf-md-format-font",
+  "exec": "/usr/bin/true",
+  "category": "a-font-review"
+}

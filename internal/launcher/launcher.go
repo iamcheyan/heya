@@ -216,6 +216,14 @@ func onOff(v bool) string {
 	return "Off"
 }
 
+// FreezeStatus pins a snapshot and stops further probing. The frame dump uses
+// it so exported images never carry the developing machine's hostname, address
+// or memory layout.
+func (l *Launcher) FreezeStatus(status system.Status) {
+	l.status = status
+	l.probe = nil
+}
+
 // RefreshStatus re-reads device state.
 func (l *Launcher) RefreshStatus() {
 	if l.probe != nil {

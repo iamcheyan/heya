@@ -92,13 +92,30 @@ func resolveFont(theme model.Theme) (string, error) {
 	return "", fmt.Errorf("no font found; tried %v", DefaultFontCandidates)
 }
 
-func needsCJKFont(text string) bool {
-	for _, r := range text {
-		if r > 0x024f {
-			return true
+// resolveCJKFont finds the CJK fallback face. A missing theme entry is not
+// fatal: heya still runs, it only loses non-Latin coverage. Relative theme
+// paths resolve against the primary font's directory, the local and installed
+// asset directories, then the system candidates.
+func resolveCJKFont(theme model.Theme) string {
+	if base := theme.FontCJK; base != "" {
+		candidates := []string{base}
+		if !filepath.IsAbs(base) {
+			for _, dir := range []string{filepath.Dir(theme.Font), "assets", "/usr/share/heya/assets"} {
+				candidates = append(candidates, filepath.Join(dir, base))
+			}
+		}
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
 		}
 	}
-	return false
+	for _, candidate := range DefaultCJKFontCandidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // Row is one selectable line.
@@ -122,18 +139,19 @@ type Frame struct {
 
 // UI owns the window, renderer, font and text cache.
 type UI struct {
-	win        *sdl.Window
-	ren        *sdl.Renderer
-	font       *ttf.Font
-	cjkFont    *ttf.Font
-	theme      model.Theme
-	pal        palette
-	icons      model.Icons
-	cache      map[string]*sdl.Texture
-	textWidths map[string]int32
-	Width      int32
-	Height     int32
-	scale      int32
+	win         *sdl.Window
+	ren         *sdl.Renderer
+	font        *ttf.Font
+	cjkFont     *ttf.Font
+	theme       model.Theme
+	pal         palette
+	icons       model.Icons
+	cache       map[string]*sdl.Texture
+	textWidths  map[string]int32
+	textHeights map[string]int32
+	Width       int32
+	Height      int32
+	scale       int32
 }
 
 // Options configures UI creation.
@@ -163,31 +181,13 @@ func Open(opts Options) (*UI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open font %s: %w", fontPath, err)
 	}
-	cjkPath := opts.Theme.FontCJK
-	if cjkPath != "" && !filepath.IsAbs(cjkPath) {
-		if _, statErr := os.Stat(cjkPath); statErr != nil {
-			for _, candidate := range []string{filepath.Join(filepath.Dir(opts.Theme.Font), filepath.Base(cjkPath)), filepath.Join("assets", filepath.Base(cjkPath)), filepath.Join("/usr/share/heya/assets", filepath.Base(cjkPath))} {
-				if _, candidateErr := os.Stat(candidate); candidateErr == nil {
-					cjkPath = candidate
-					break
-				}
-			}
-		}
-	}
-	if cjkPath == "" {
-		for _, candidate := range DefaultCJKFontCandidates {
-			if _, statErr := os.Stat(candidate); statErr == nil {
-				cjkPath = candidate
-				break
-			}
-		}
-	}
 	var cjkFont *ttf.Font
-	if cjkPath != "" {
-		cjkFont, err = ttf.OpenFont(cjkPath, opts.Theme.Scale)
-		if err != nil {
-			font.Close()
-			return nil, fmt.Errorf("open CJK font %s: %w", cjkPath, err)
+	if cjkPath := resolveCJKFont(opts.Theme); cjkPath != "" {
+		// A CJK face is an enhancement, never a boot requirement: an unreadable
+		// file leaves Latin rendering intact.
+		if cjkFont, err = ttf.OpenFont(cjkPath, opts.Theme.Scale); err != nil {
+			fmt.Fprintf(os.Stderr, "heya: CJK font %s: %v\n", cjkPath, err)
+			cjkFont = nil
 		}
 	}
 
@@ -216,7 +216,7 @@ func Open(opts Options) (*UI, error) {
 
 	return &UI{
 		win: win, ren: ren, font: font, cjkFont: cjkFont, theme: opts.Theme, pal: pal,
-		icons: opts.Icons, cache: map[string]*sdl.Texture{}, textWidths: map[string]int32{},
+		icons: opts.Icons, cache: map[string]*sdl.Texture{}, textWidths: map[string]int32{}, textHeights: map[string]int32{},
 		Width: opts.Width, Height: opts.Height, scale: int32(opts.Theme.Scale),
 	}, nil
 }
@@ -228,6 +228,7 @@ func (u *UI) Close() {
 	}
 	u.cache = map[string]*sdl.Texture{}
 	u.textWidths = map[string]int32{}
+	u.textHeights = map[string]int32{}
 	if u.font != nil {
 		u.font.Close()
 		u.font = nil
@@ -253,23 +254,108 @@ func (u *UI) texture(text string, c sdl.Color) (*sdl.Texture, error) {
 	if texture, ok := u.cache[key]; ok {
 		return texture, nil
 	}
-	font := u.font
-	if u.cjkFont != nil && needsCJKFont(text) {
-		font = u.cjkFont
-	}
-	surface, err := font.RenderUTF8Blended(text, c)
+	surfaces, err := u.renderText(text, c)
 	if err != nil {
 		return nil, err
 	}
-	defer surface.Free()
-	width := surface.W
-	texture, err := u.ren.CreateTextureFromSurface(surface)
+	defer surfaces.Free()
+	texture, err := u.ren.CreateTextureFromSurface(surfaces)
 	if err != nil {
 		return nil, err
 	}
 	u.cache[key] = texture
-	u.textWidths[key] = int32(width)
+	u.textWidths[key] = int32(surfaces.W)
+	u.textHeights[key] = int32(surfaces.H)
 	return texture, nil
+}
+
+func (u *UI) renderText(text string, c sdl.Color) (*sdl.Surface, error) {
+	if u.cjkFont == nil || !containsCJK(text) {
+		return u.font.RenderUTF8Blended(text, c)
+	}
+	// Render text runs with the best matching face; Latin runs retain Nerd Font icons.
+	type run struct {
+		text string
+		font *ttf.Font
+	}
+	var runs []run
+	for _, r := range text {
+		font := u.font
+		if isCJKRune(r) {
+			font = u.cjkFont
+		}
+		if len(runs) > 0 && runs[len(runs)-1].font == font {
+			runs[len(runs)-1].text += string(r)
+		} else {
+			runs = append(runs, run{text: string(r), font: font})
+		}
+	}
+	parts := make([]*sdl.Surface, 0, len(runs))
+	width := int32(0)
+	height := u.scale * 2
+	for _, item := range runs {
+		part, renderErr := item.font.RenderUTF8Blended(item.text, c)
+		if renderErr != nil {
+			for _, surface := range parts {
+				surface.Free()
+			}
+			return nil, renderErr
+		}
+		parts = append(parts, part)
+		width += part.W
+		if part.H > height {
+			height = part.H
+		}
+	}
+	if width < 1 {
+		width = 1
+	}
+	// ARGB8888 matches SDL_ttf's blended output, so per-run pixels (colour plus
+	// coverage) copy straight into the canvas without re-blending.
+	result, err := sdl.CreateRGBSurfaceWithFormat(0, width, height, 32, uint32(sdl.PIXELFORMAT_ARGB8888))
+	if err != nil {
+		for _, surface := range parts {
+			surface.Free()
+		}
+		return nil, err
+	}
+	// Blank the canvas; per-run pixels then overwrite their own coverage.
+	if err := result.FillRect(nil, 0); err != nil {
+		for _, surface := range parts {
+			surface.Free()
+		}
+		result.Free()
+		return nil, err
+	}
+	x := int32(0)
+	for _, part := range parts {
+		// The receiver is the blit *source*: copy each rendered run onto the
+		// canvas, preserving its coverage so the composed texture is visible.
+		dst := sdl.Rect{X: x, Y: 0, W: part.W, H: part.H}
+		if err := part.Blit(nil, result, &dst); err != nil {
+			for _, surface := range parts {
+				surface.Free()
+			}
+			result.Free()
+			return nil, err
+		}
+		x += part.W
+		part.Free()
+	}
+	return result, nil
+}
+
+func containsCJK(text string) bool {
+	for _, r := range text {
+		if isCJKRune(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCJKRune(r rune) bool {
+	return (r >= 0x2e80 && r <= 0x9fff) || (r >= 0xf900 && r <= 0xfaff) || (r >= 0x3040 && r <= 0x30ff) || (r >= 0xac00 && r <= 0xd7af)
 }
 
 func (u *UI) drawText(text string, x, y int32, c sdl.Color) int32 {
@@ -280,15 +366,10 @@ func (u *UI) drawText(text string, x, y int32, c sdl.Color) int32 {
 	if err != nil {
 		return 0
 	}
-	_, _, _, h, err := texture.Query()
-	if err != nil {
-		return 0
-	}
 	key := text + "|" + strconv.Itoa(int(c.R)) + "," + strconv.Itoa(int(c.G)) + "," + strconv.Itoa(int(c.B))
-	w := u.textWidths[key]
-	dst := sdl.Rect{X: x, Y: y, W: w, H: h}
+	dst := sdl.Rect{X: x, Y: y, W: u.textWidths[key], H: u.textHeights[key]}
 	_ = u.ren.Copy(texture, nil, &dst)
-	return w
+	return u.textWidths[key]
 }
 
 func (u *UI) rowHeight() int32 {
