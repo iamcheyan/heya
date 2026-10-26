@@ -47,6 +47,14 @@ On a device the binary reads `/storage/heya/apps` and seeds
 - [`docs/rocknix-architecture.md`](docs/rocknix-architecture.md) — ROCKNIX boot chain, frontend entry points, game-launch contract
 - [`integrations/rocknix/README.md`](integrations/rocknix/README.md) — installing heya as the boot frontend
 
+## Screenshots
+
+| Apps (default theme) | System | Light theme |
+|---|---|---|
+| ![apps](docs/screenshots/apps.png) | ![system](docs/screenshots/system.png) | ![light](docs/screenshots/apps-light-theme.png) |
+
+Rendered by `make dump` at 720x480 with the bundled Nerd Font.
+
 ## Status
 
 Milestones M1–M5 are implemented and verified on a Linux PC (menu rendering, app
