@@ -86,8 +86,11 @@ func TestPageNavigationAndCancel(t *testing.T) {
 		t.Fatalf("cancel from subpage should not quit: %+v", cmd)
 	}
 	cmd = l.Handle(input.Cancel)
-	if cmd.Kind != CmdQuit {
-		t.Fatalf("cancel at root should quit: %+v", cmd)
+	if cmd.Kind != CmdNone {
+		t.Fatalf("cancel at root should do nothing: %+v", cmd)
+	}
+	if l.Path() != "apps" {
+		t.Fatalf("cancel at root changed path: %s", l.Path())
 	}
 }
 
@@ -117,6 +120,57 @@ func TestSystemRowsShowUnavailableWithoutProbe(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected Battery=Unavailable, got %+v", rows)
+	}
+}
+
+func TestSystemHasUSBSettingsAndUSBModes(t *testing.T) {
+	l := testLauncher()
+	l.Handle(input.Down)
+	l.Handle(input.Confirm)
+	for l.Frame().Rows[l.Frame().Selected].Label != "USB settings" {
+		l.Handle(input.Down)
+		if l.Frame().Selected == 0 {
+			t.Fatal("USB settings row is missing")
+		}
+	}
+	l.Handle(input.Confirm)
+	if l.Path() != "apps>system>usb" {
+		t.Fatalf("USB settings path = %s", l.Path())
+	}
+	for _, want := range []string{"MTP file transfer", "USB ADB", "USB network", "Charge only", "Wireless ADB"} {
+		found := false
+		for _, row := range l.Frame().Rows {
+			if row.Label == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing USB mode %q", want)
+		}
+	}
+	wantCommands := []struct {
+		label string
+		arg   string
+	}{
+		{"MTP file transfer", "file_transfer"},
+		{"USB ADB", "adb"},
+		{"USB network", "network"},
+		{"Charge only", "disabled"},
+		{"Wireless ADB", "adb_tcp"},
+		{"Stop Wireless ADB", "adb_tcp_stop"},
+	}
+	for i, want := range wantCommands {
+		if i > 0 {
+			l.Handle(input.Down)
+		}
+		if got := l.Frame().Rows[l.Frame().Selected].Label; got != want.label {
+			t.Fatalf("USB selection = %q, want %q", got, want.label)
+		}
+		command := l.Handle(input.Confirm)
+		if command.Kind != CmdExec || command.Exec != "/usr/bin/usbgadget" || len(command.Args) != 1 || command.Args[0] != want.arg {
+			t.Fatalf("%s command = %+v", want.label, command)
+		}
 	}
 }
 

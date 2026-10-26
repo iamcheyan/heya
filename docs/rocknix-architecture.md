@@ -137,7 +137,7 @@ heya 用**极简 JSON 主题**（背景/文本/强调/选中色 + 字体 + 缩�
 - 输入来自 SDL 事件；手柄热插拔由 SDL 的 device added/removed 事件驱动。
 - 游戏内输入不走 ES：`gptokeyb` 把手柄映射成键盘事件给模拟器，配置文件随系统/游戏下发（如 `projects/ROCKNIX/packages/rocknix/sources/.../controls.ini`）。
 
-**heya 的映射**：语义动作（Confirm/Cancel/Up/Down/…）+ 可覆盖的 `input.json`。Anbernic 设备的物理 A/B 与 SDL 标准相反（物理 A = `SDL_CONTROLLER_BUTTON_B`），必须配置化，不能写死。
+**heya 的映射**：语义动作（Confirm/Cancel/Up/Down/…）+ 可覆盖的 `input.json`。H700 上物理 A 映射到 SDL A（确认），物理 B 映射到 SDL B（返回）；方向键、肩键、Start 和 Select 由 ROCKNIX GameControllerDB 映射。
 
 ---
 
@@ -173,6 +173,6 @@ heya 替换 ES 时：保留 `/usr/bin/run` 调用方式即可，不重写模拟�
 2. **前端入口**：M6 时替换 `essway.service` 的 `ExecStart` 或 `start_es.sh` 的 exec 目标；两者保留其一的回退能力。
 3. **环境**：必须自己完成时区、locale、quirk 环境导入（第 3 节），否则中文/日文与时间会异常。
 4. **游戏**：只通过 `/usr/bin/run` 启动，参数格式与 ES 一致；不碰 `runemu.sh`。
-5. **输入**：语义动作 + 可覆盖映射；Anbernic A/B 反向必须配置化。
+5. **输入**：语义动作 + 可覆盖映射；H700 上 A 确认、B 返回。
 6. **显示**：720×480 横屏；`SDL_VIDEODRIVER` 由环境决定（ROCKNIX 为 `wayland`），不硬编码。
 7. **权限**：系统目录只读；`exec` 目标做绝对路径与权限校验。

@@ -40,17 +40,29 @@ func TestHandlerResolvesKeys(t *testing.T) {
 	}
 }
 
-func TestHandlerResolvesAnbernicSwap(t *testing.T) {
+func TestHandlerResolvesH700Buttons(t *testing.T) {
 	handler, err := NewHandler(DefaultMapping())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Physical A on Anbernic hardware reports as SDL button B.
-	if got := handler.Button(sdl.CONTROLLER_BUTTON_B); got != Confirm {
-		t.Fatalf("pad B = %s, want confirm", got)
+	cases := map[sdl.GameControllerButton]Action{
+		sdl.CONTROLLER_BUTTON_A:             Confirm,
+		sdl.CONTROLLER_BUTTON_B:             Cancel,
+		sdl.CONTROLLER_BUTTON_DPAD_UP:       Up,
+		sdl.CONTROLLER_BUTTON_DPAD_DOWN:     Down,
+		sdl.CONTROLLER_BUTTON_DPAD_LEFT:     Left,
+		sdl.CONTROLLER_BUTTON_DPAD_RIGHT:    Right,
+		sdl.CONTROLLER_BUTTON_LEFTSHOULDER:  PageUp,
+		sdl.CONTROLLER_BUTTON_RIGHTSHOULDER: PageDown,
+		sdl.CONTROLLER_BUTTON_START:         Start,
+		sdl.CONTROLLER_BUTTON_BACK:          Select,
+		sdl.CONTROLLER_BUTTON_X:             None,
+		sdl.CONTROLLER_BUTTON_Y:             None,
 	}
-	if got := handler.Button(sdl.CONTROLLER_BUTTON_A); got != Cancel {
-		t.Fatalf("pad A = %s, want cancel", got)
+	for button, want := range cases {
+		if got := handler.Button(button); got != want {
+			t.Errorf("button %v = %s, want %s", button, got, want)
+		}
 	}
 }
 

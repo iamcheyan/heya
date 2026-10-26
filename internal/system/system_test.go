@@ -76,6 +76,19 @@ func TestProbeDegradesWhenFilesMissing(t *testing.T) {
 	}
 }
 
+func TestProbeReadsUSBMode(t *testing.T) {
+	probe := &Probe{Run: func(name string, _ ...string) (string, error) {
+		if name == "usbgadget" {
+			return "file_transfer", nil
+		}
+		return "", os.ErrNotExist
+	}}
+	status := probe.Read()
+	if !status.USBKnown || status.USBMode != "MTP" {
+		t.Fatalf("USB mode = %+v", status)
+	}
+}
+
 func TestProbeReadsWifiFromRfkill(t *testing.T) {
 	root := t.TempDir()
 	probe := &Probe{Root: root, Run: func(name string, _ ...string) (string, error) {

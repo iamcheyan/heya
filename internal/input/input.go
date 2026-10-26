@@ -1,6 +1,6 @@
 // Package input turns SDL keyboard and controller events into semantic
 // actions. Physical button layouts differ per device, so the mapping is data,
-// not code: Anbernic hardware reports its physical A as SDL button B.
+// not code.
 package input
 
 import (
@@ -82,9 +82,8 @@ func DefaultMapping() Mapping {
 			"quit":      {"F10"},
 		},
 		Pad: map[string][]string{
-			// Physical A on Anbernic hardware is SDL "b"; physical B is SDL "a".
-			"confirm":   {"b"},
-			"cancel":    {"a"},
+			"confirm":   {"a"},
+			"cancel":    {"b"},
 			"up":        {"dpup"},
 			"down":      {"dpdown"},
 			"left":      {"dpleft"},

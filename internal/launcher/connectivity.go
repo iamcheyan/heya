@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/iamcheyan/heya/internal/connectivity"
 	"github.com/iamcheyan/heya/internal/input"
@@ -38,7 +36,7 @@ type networkUI struct {
 }
 type textEditor struct {
 	title, text     string
-	secret, numeric bool
+	numeric         bool
 	page, row, col  int
 	submit          func(string)
 }
@@ -350,7 +348,7 @@ func (l *Launcher) passwordEditor() {
 		l.message = "This security type needs a system profile"
 		return
 	}
-	n.editor = &textEditor{title: "Wi-Fi password", secret: true, submit: l.connectWiFi}
+	n.editor = &textEditor{title: "Wi-Fi password", submit: l.connectWiFi}
 	l.message = ""
 }
 func (l *Launcher) connectWiFi(password string) {
@@ -447,9 +445,6 @@ func (e *textEditor) keys() []rune {
 }
 func (e *textEditor) rows() []ui.Row {
 	text := e.text
-	if e.secret {
-		text = strings.Repeat("*", utf8.RuneCountInString(text))
-	}
 	if text == "" {
 		text = "(empty)"
 	}

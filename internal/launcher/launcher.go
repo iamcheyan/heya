@@ -189,6 +189,10 @@ func (l *Launcher) systemRows() []ui.Row {
 	if kernel == "" {
 		kernel = unknown
 	}
+	usbMode := unknown
+	if s.USBKnown {
+		usbMode = s.USBMode
+	}
 
 	return []ui.Row{
 		{Label: "Battery", Value: battery},
@@ -204,7 +208,20 @@ func (l *Launcher) systemRows() []ui.Row {
 		{Label: "ZRAM", Value: zram},
 		{Label: "Uptime", Value: uptime},
 		{Label: "Kernel", Value: kernel},
+		{Label: "USB mode", Value: usbMode},
+		{Label: "USB settings", Value: "›"},
 	}
+}
+
+func usbPage() model.Page {
+	return model.Page{Title: "USB settings", Items: []model.Item{
+		{Name: "MTP file transfer", Exec: "/usr/bin/usbgadget", Args: []string{"file_transfer"}},
+		{Name: "USB ADB", Exec: "/usr/bin/usbgadget", Args: []string{"adb"}},
+		{Name: "USB network", Exec: "/usr/bin/usbgadget", Args: []string{"network"}},
+		{Name: "Charge only", Exec: "/usr/bin/usbgadget", Args: []string{"disabled"}},
+		{Name: "Wireless ADB", Exec: "/usr/bin/usbgadget", Args: []string{"adb_tcp"}},
+		{Name: "Stop Wireless ADB", Exec: "/usr/bin/usbgadget", Args: []string{"adb_tcp_stop"}},
+	}}
 }
 
 func onOff(v bool) string {
@@ -239,6 +256,8 @@ func (l *Launcher) Title() string {
 		return "Applications"
 	case "system":
 		return "System"
+	case "usb":
+		return "USB settings"
 	case "wifi", "wifi-device":
 		return "Wi-Fi"
 	case "bluetooth", "bluetooth-device":
@@ -275,8 +294,10 @@ func (l *Launcher) Frame() ui.Frame {
 	}
 
 	hint := "[A] SELECT   [D-PAD] MOVE   [B] EXIT"
-	if pageID == "system" {
-		hint = "[A] OPEN   [LEFT/RIGHT] ADJUST   [B] BACK"
+	if pageID == "apps" {
+		hint = "[A] SELECT   [D-PAD] MOVE"
+	} else if pageID == "system" {
+		hint = "[A] OPEN   [SELECT] REFRESH   [B] BACK"
 	} else if pageID != "apps" {
 		hint = "[D-PAD] SCROLL   [B] BACK"
 	}
@@ -380,6 +401,12 @@ func (l *Launcher) Handle(action input.Action) Command {
 			return Command{}
 		}
 		item := l.currentItem(pageID, l.index[pageID])
+		if pageID == "system" && l.index[pageID] == len(l.systemRows())-1 {
+			l.AddPage("usb", usbPage())
+			l.stack = append(l.stack, "usb")
+			l.index["usb"], l.offset["usb"] = 0, 0
+			return Command{}
+		}
 		if item == nil {
 			return Command{}
 		}
@@ -403,7 +430,7 @@ func (l *Launcher) Handle(action input.Action) Command {
 			}
 			return Command{}
 		}
-		return Command{Kind: CmdQuit}
+		return Command{}
 	case input.Quit:
 		return Command{Kind: CmdQuit}
 	}
@@ -420,6 +447,9 @@ func (l *Launcher) currentItem(pageID string, index int) *model.Item {
 		}
 		item := l.apps.Items[index]
 		return &item
+	}
+	if pageID == "system" {
+		return nil
 	}
 	page, ok := l.pages[pageID]
 	if !ok || index < 0 || index >= len(page.Items) {

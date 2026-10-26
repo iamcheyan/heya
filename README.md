@@ -94,9 +94,13 @@ bonds. Only the selected device can use heya's temporary pairing agent.
 
 The onscreen keyboard uses D-pad + A. L changes case, R selects symbols,
 SELECT deletes, START submits and B cancels. A physical keyboard also works.
-Wi-Fi passwords are masked. Scans and connections run in the background; cancel
-waits for cleanup before another radio operation starts. Settings changes finish
-before accepting another change.
+Wi-Fi and Bluetooth credentials are shown while entering them. Scans and
+connections run in the background; cancel waits for cleanup before another
+radio operation starts. Settings changes finish before accepting another change.
+
+USB settings provide MTP file transfer, USB ADB, USB networking and charge-only
+modes, plus Wireless ADB controls on port 5555. MTP exposes files through the
+MTP protocol; it does not expose the SD card as a raw USB disk.
 
 Set `HEYA_SIMULATOR=1` to preview demo networks and devices without touching host
 radios. Actual device pairing, saved reconnection after reboot, suspend/resume,

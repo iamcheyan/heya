@@ -66,10 +66,14 @@ func TestWiFiKeyboardAndFailure(t *testing.T) {
 	}
 	l.TextInput("secret'12")
 	frame := l.Frame()
+	visible := false
 	for _, row := range frame.Rows {
-		if strings.Contains(row.Value, "secret") {
-			t.Fatal("password visible")
+		if row.Label == "Input" && row.Value == "secret'12" {
+			visible = true
 		}
+	}
+	if !visible {
+		t.Fatalf("password should be visible in the editor: %+v", frame.Rows)
 	}
 	l.Handle(input.Start)
 	waitNetwork(t, l)

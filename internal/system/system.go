@@ -52,6 +52,9 @@ type Status struct {
 	BrightnessKnown bool
 
 	Zram string
+
+	USBMode  string
+	USBKnown bool
 }
 
 // Probe reads state from a filesystem root (tests point it at fixtures).
@@ -128,6 +131,20 @@ func (p *Probe) Read() Status {
 	p.readVolume(&s)
 	p.readBrightness(&s)
 	p.readZram(&s)
+	if p.Run != nil {
+		if mode, err := p.Run("usbgadget"); err == nil {
+			switch mode {
+			case "disabled":
+				s.USBMode, s.USBKnown = "Charge only", true
+			case "file_transfer":
+				s.USBMode, s.USBKnown = "MTP", true
+			case "network":
+				s.USBMode, s.USBKnown = "Network", true
+			case "adb":
+				s.USBMode, s.USBKnown = "ADB", true
+			}
+		}
+	}
 	return s
 }
 
