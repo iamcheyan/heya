@@ -49,11 +49,16 @@ func ParseColor(value string) (sdl.Color, error) {
 
 // palette is the resolved theme.
 type palette struct {
-	background sdl.Color
-	text       sdl.Color
-	muted      sdl.Color
-	accent     sdl.Color
-	selection  sdl.Color
+	background    sdl.Color
+	text          sdl.Color
+	muted         sdl.Color
+	accent        sdl.Color
+	selection     sdl.Color
+	panel         sdl.Color
+	bar           sdl.Color
+	info          sdl.Color
+	success       sdl.Color
+	selectionText sdl.Color
 }
 
 func resolvePalette(theme model.Theme) (palette, error) {
@@ -73,6 +78,14 @@ func resolvePalette(theme model.Theme) (palette, error) {
 	}
 	if p.selection, err = ParseColor(theme.Selection); err != nil {
 		return p, err
+	}
+	for field, value := range map[*sdl.Color]string{
+		&p.panel: theme.Panel, &p.bar: theme.Bar, &p.info: theme.Info,
+		&p.success: theme.Success, &p.selectionText: theme.SelectionText,
+	} {
+		if *field, err = ParseColor(value); err != nil {
+			return p, err
+		}
 	}
 	return p, nil
 }
@@ -120,9 +133,11 @@ func resolveCJKFont(theme model.Theme) string {
 
 // Row is one selectable line.
 type Row struct {
-	Label string
-	Value string
-	Icon  rune
+	Cells        []string
+	CellSelected int
+	Label        string
+	Value        string
+	Icon         rune
 }
 
 // Frame is everything the renderer needs for one picture.
@@ -177,17 +192,22 @@ func Open(opts Options) (*UI, error) {
 	if err != nil {
 		return nil, err
 	}
-	font, err := ttf.OpenFont(fontPath, opts.Theme.Scale)
+	fontSize := opts.Theme.Scale * 3 / 2
+	font, err := ttf.OpenFont(fontPath, fontSize)
 	if err != nil {
 		return nil, fmt.Errorf("open font %s: %w", fontPath, err)
 	}
+	font.SetStyle(ttf.STYLE_BOLD)
 	var cjkFont *ttf.Font
 	if cjkPath := resolveCJKFont(opts.Theme); cjkPath != "" {
 		// A CJK face is an enhancement, never a boot requirement: an unreadable
 		// file leaves Latin rendering intact.
-		if cjkFont, err = ttf.OpenFont(cjkPath, opts.Theme.Scale); err != nil {
+		if cjkFont, err = ttf.OpenFont(cjkPath, fontSize); err != nil {
 			fmt.Fprintf(os.Stderr, "heya: CJK font %s: %v\n", cjkPath, err)
 			cjkFont = nil
+		}
+		if cjkFont != nil {
+			cjkFont.SetStyle(ttf.STYLE_BOLD)
 		}
 	}
 
@@ -372,106 +392,189 @@ func (u *UI) drawText(text string, x, y int32, c sdl.Color) int32 {
 	return u.textWidths[key]
 }
 
-func (u *UI) rowHeight() int32 {
-	return u.scale + u.scale/2
+type menuLayout struct {
+	top, bottom, listTop, left, width, rowHeight, gap int32
+	unit                                              float64
 }
 
-// Render draws a frame.
+func (u *UI) layout() menuLayout {
+	unit := float64(u.Width) / 720
+	if vertical := float64(u.Height) / 480; vertical < unit {
+		unit = vertical
+	}
+	px := func(n int32) int32 { return max(1, int32(float64(n)*unit)) }
+	rowHeight := max(px(48), int32(u.font.Height())+px(12))
+	return menuLayout{top: px(36), bottom: px(38), listTop: px(92), left: px(45),
+		width: u.Width - px(100), rowHeight: rowHeight, gap: px(10), unit: unit}
+}
+
+func (u *UI) VisibleRows() int {
+	layout := u.layout()
+	return max(1, int((u.Height-layout.bottom-layout.listTop+layout.gap)/(layout.rowHeight+layout.gap)))
+}
+
+func (u *UI) fill(rect sdl.Rect, c sdl.Color) {
+	_ = u.ren.SetDrawColor(c.R, c.G, c.B, 255)
+	_ = u.ren.FillRect(&rect)
+}
+
+func (u *UI) textSize(text string, c sdl.Color) (int32, int32) {
+	if _, err := u.texture(text, c); err != nil {
+		return 0, 0
+	}
+	key := text + "|" + strconv.Itoa(int(c.R)) + "," + strconv.Itoa(int(c.G)) + "," + strconv.Itoa(int(c.B))
+	return u.textWidths[key], u.textHeights[key]
+}
+
+func (u *UI) textInBox(text string, box sdl.Rect, c sdl.Color, centered bool) {
+	if text == "" || box.W <= 0 || box.H <= 0 {
+		return
+	}
+	texture, err := u.texture(text, c)
+	if err != nil {
+		return
+	}
+	w, h := u.textSize(text, c)
+	if w <= 0 || h <= 0 {
+		return
+	}
+	ratio := min(1.0, float64(box.H)/float64(h), float64(box.W)/float64(w))
+	w, h = int32(float64(w)*ratio), int32(float64(h)*ratio)
+	x := box.X
+	if centered {
+		x += (box.W - w) / 2
+	}
+	dst := sdl.Rect{X: x, Y: box.Y + (box.H-h)/2, W: w, H: h}
+	_ = u.ren.Copy(texture, nil, &dst)
+}
+
+func (u *UI) rowText(text string, box sdl.Rect, c sdl.Color, selected bool, right bool) {
+	if text == "" || box.W <= 0 || box.H <= 0 {
+		return
+	}
+	texture, err := u.texture(text, c)
+	if err != nil {
+		return
+	}
+	w, h := u.textSize(text, c)
+	if w <= 0 || h <= 0 {
+		return
+	}
+	ratio := min(1.0, float64(box.H)/float64(h))
+	w, h = int32(float64(w)*ratio), int32(float64(h)*ratio)
+	x := box.X
+	if right && w <= box.W {
+		x += box.W - w
+	}
+	if w > box.W && selected {
+		distance := w - box.W
+		phase := int32(sdl.GetTicks()/30) % (2*distance + 120)
+		offset := min(distance, max(0, phase-60))
+		if phase > distance+120 {
+			offset = max(0, 2*distance+120-phase)
+		}
+		x -= offset
+	}
+	_ = u.ren.SetClipRect(&box)
+	dst := sdl.Rect{X: x, Y: box.Y + (box.H-h)/2, W: w, H: h}
+	_ = u.ren.Copy(texture, nil, &dst)
+	_ = u.ren.SetClipRect(nil)
+}
+
+// Render draws the same handheld menu layout on every page.
 func (u *UI) Render(frame Frame) error {
 	_ = u.ren.SetDrawColor(u.pal.background.R, u.pal.background.G, u.pal.background.B, 255)
 	_ = u.ren.Clear()
+	layout := u.layout()
+	px := func(n int32) int32 { return max(1, int32(float64(n)*layout.unit)) }
 
-	topH := u.scale * 2
-	botH := u.scale * 2
-	titleH := u.scale * 2
-
-	// Status bar
-	_ = u.ren.SetDrawColor(18, 22, 30, 255)
-	_ = u.ren.FillRect(&sdl.Rect{X: 0, Y: 0, W: u.Width, H: topH})
-
-	x := u.scale / 2
+	u.fill(sdl.Rect{W: u.Width, H: layout.top}, u.pal.bar)
+	slotWidth := u.Width / 4
 	for i, segment := range frame.Status {
-		if segment == "" {
-			continue
+		if i >= 4 {
+			break
 		}
 		c := u.pal.text
-		if i == 0 {
-			c = u.pal.accent
+		switch i {
+		case 0:
+			c = u.pal.info
+		case 1, 2:
+			c = u.pal.muted
+			if strings.HasSuffix(segment, "ON") {
+				c = u.pal.success
+			}
+			if i == 2 && strings.HasSuffix(segment, "ON") {
+				c = u.pal.accent
+			}
 		}
-		w := u.drawText(segment, x, (topH-u.scale)/2, c)
-		x += w + u.scale
+		u.textInBox(segment, sdl.Rect{X: int32(i)*slotWidth + px(20), Y: px(6), W: slotWidth - px(32), H: layout.top - px(12)}, c, false)
 	}
 
-	// Title
-	u.drawText(frame.Title, u.scale, topH+u.scale/2, u.pal.accent)
+	title := strings.ToUpper(frame.Title)
+	if title == "APPLICATIONS" {
+		title = "HEYA LAUNCHER"
+	}
+	u.textInBox("=== "+title+" ===", sdl.Rect{X: px(45), Y: px(44), W: u.Width - px(90), H: px(30)}, u.pal.accent, true)
 
-	// Rows
-	listTop := topH + titleH + u.scale
-	rowH := u.rowHeight()
-	visible := int((u.Height - listTop - botH - u.scale) / rowH)
-	if visible < 1 {
-		visible = 1
+	visible := u.VisibleRows()
+	if frame.Visible > 0 {
+		visible = min(visible, frame.Visible)
 	}
-	offset := frame.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := min(max(0, frame.Offset), max(0, len(frame.Rows)-visible))
 	for i := 0; i < visible && offset+i < len(frame.Rows); i++ {
-		idx := offset + i
-		row := frame.Rows[idx]
-		y := listTop + int32(i)*rowH
-		selected := idx == frame.Selected
-
+		index := offset + i
+		row := frame.Rows[index]
+		selected := index == frame.Selected
+		rect := sdl.Rect{X: layout.left, Y: layout.listTop + int32(i)*(layout.rowHeight+layout.gap), W: layout.width, H: layout.rowHeight}
+		background, label := u.pal.panel, u.pal.muted
 		if selected {
-			_ = u.ren.SetDrawColor(u.pal.selection.R, u.pal.selection.G, u.pal.selection.B, 255)
-			_ = u.ren.FillRect(&sdl.Rect{X: u.scale / 2, Y: y - 2, W: u.Width - u.scale, H: rowH - 2})
+			background, label = u.pal.selection, u.pal.selectionText
+			u.textInBox(">", sdl.Rect{X: px(16), Y: rect.Y, W: px(22), H: rect.H}, u.pal.accent, true)
 		}
-
-		labelColor := u.pal.text
-		if !selected {
-			labelColor = u.pal.muted
+		u.fill(rect, background)
+		if len(row.Cells) > 0 {
+			cellW := rect.W / int32(len(row.Cells))
+			for j, key := range row.Cells {
+				cell := sdl.Rect{X: rect.X + int32(j)*cellW + px(2), Y: rect.Y + px(3), W: cellW - px(4), H: rect.H - px(6)}
+				color := u.pal.text
+				if j == row.CellSelected {
+					u.fill(cell, u.pal.accent)
+					color = u.pal.bar
+				}
+				u.textInBox(key, cell, color, true)
+			}
+			continue
 		}
-		iconWidth := int32(0)
+		textX := rect.X + px(15)
 		if row.Icon != 0 {
-			iconWidth = u.drawText(string(row.Icon), u.scale, y, u.pal.accent)
-			iconWidth += u.scale / 2
+			u.textInBox(string(row.Icon), sdl.Rect{X: textX, Y: rect.Y, W: px(26), H: rect.H}, u.pal.accent, true)
+			textX += px(38)
 		}
-		labelWidth := u.drawText(row.Label, u.scale+iconWidth, y, labelColor)
+		textWidth := rect.X + rect.W - px(20) - textX
+		box := sdl.Rect{X: textX, Y: rect.Y + px(6), W: textWidth, H: rect.H - px(12)}
 		if row.Value != "" {
-			valueX := u.scale + iconWidth + labelWidth + u.scale
-			u.drawText(row.Value, valueX, y, u.pal.accent)
+			box.W = textWidth * 46 / 100
+			valueBox := sdl.Rect{X: textX + textWidth/2, Y: box.Y, W: textWidth / 2, H: box.H}
+			u.rowText(row.Value, valueBox, u.pal.accent, selected, true)
 		}
+		u.rowText(row.Label, box, label, selected, false)
 	}
 
-	// Scrollbar
 	if len(frame.Rows) > visible {
-		trackX := u.Width - u.scale
-		trackH := int32(visible) * rowH
-		_ = u.ren.SetDrawColor(40, 48, 64, 255)
-		_ = u.ren.FillRect(&sdl.Rect{X: trackX, Y: listTop, W: u.scale / 2, H: trackH})
-		thumbH := trackH * int32(visible) / int32(len(frame.Rows))
-		if thumbH < u.scale {
-			thumbH = u.scale
-		}
-		thumbY := listTop
-		if len(frame.Rows) > visible {
-			thumbY += (trackH - thumbH) * int32(offset) / int32(len(frame.Rows)-visible)
-		}
-		_ = u.ren.SetDrawColor(u.pal.accent.R, u.pal.accent.G, u.pal.accent.B, 255)
-		_ = u.ren.FillRect(&sdl.Rect{X: trackX, Y: thumbY, W: u.scale / 2, H: thumbH})
+		track := sdl.Rect{X: u.Width - px(26), Y: layout.listTop, W: px(6), H: int32(visible)*(layout.rowHeight+layout.gap) - layout.gap}
+		u.fill(track, u.pal.panel)
+		thumbHeight := max(px(20), track.H*int32(visible)/int32(len(frame.Rows)))
+		thumbY := track.Y + (track.H-thumbHeight)*int32(offset)/int32(len(frame.Rows)-visible)
+		u.fill(sdl.Rect{X: track.X, Y: thumbY, W: track.W, H: thumbHeight}, u.pal.accent)
 	}
 
-	// Message or hint bar
-	_ = u.ren.SetDrawColor(18, 22, 30, 255)
-	_ = u.ren.FillRect(&sdl.Rect{X: 0, Y: u.Height - botH, W: u.Width, H: botH})
-	line := frame.Hint
-	color := u.pal.muted
+	footer := sdl.Rect{Y: u.Height - layout.bottom, W: u.Width, H: layout.bottom}
+	u.fill(footer, u.pal.bar)
+	line, c := frame.Hint, u.pal.muted
 	if frame.Message != "" {
-		line = frame.Message
-		color = u.pal.accent
+		line, c = frame.Message, u.pal.accent
 	}
-	u.drawText(line, u.scale, u.Height-botH+(botH-u.scale)/2, color)
-
+	u.textInBox(line, sdl.Rect{X: px(16), Y: footer.Y + px(6), W: u.Width - px(32), H: footer.H - px(12)}, c, true)
 	u.ren.Present()
 	return nil
 }

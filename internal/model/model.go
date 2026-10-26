@@ -109,19 +109,27 @@ type Page struct {
 	Items []Item `json:"items"`
 }
 type Theme struct {
-	Background string `json:"background"`
-	Text       string `json:"text"`
-	Muted      string `json:"muted"`
-	Accent     string `json:"accent"`
-	Selection  string `json:"selection"`
-	Font       string `json:"font"`
-	FontCJK    string `json:"font_cjk"`
-	FontLatin  string `json:"font_latin"`
-	Scale      int    `json:"scale"`
+	Background    string `json:"background"`
+	Text          string `json:"text"`
+	Muted         string `json:"muted"`
+	Accent        string `json:"accent"`
+	Selection     string `json:"selection"`
+	Panel         string `json:"panel"`
+	Bar           string `json:"bar"`
+	Info          string `json:"info"`
+	Success       string `json:"success"`
+	SelectionText string `json:"selection_text"`
+	Font          string `json:"font"`
+	FontCJK       string `json:"font_cjk"`
+	FontLatin     string `json:"font_latin"`
+	Scale         int    `json:"scale"`
 }
 
 func DefaultTheme() Theme {
-	return Theme{Background: "#0b0e14", Text: "#f2f4f8", Muted: "#8b94a7", Accent: "#ffc400", Selection: "#0f78d7", Font: "assets/JetBrainsMonoNerdFont-Regular.ttf", FontCJK: "/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf", Scale: 16}
+	return Theme{Background: "#141820", Text: "#f5f5f5", Muted: "#a0a0a0", Accent: "#ffc400",
+		Selection: "#0078d7", Panel: "#202632", Bar: "#0e1218", Info: "#00dcff",
+		Success: "#50dc78", SelectionText: "#ffffff", Font: "assets/JetBrainsMonoNerdFont-Regular.ttf",
+		FontCJK: "/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf", Scale: 16}
 }
 func (t *Theme) Normalize() {
 	d := DefaultTheme()
@@ -139,6 +147,14 @@ func (t *Theme) Normalize() {
 	}
 	if t.Selection == "" {
 		t.Selection = d.Selection
+	}
+	for field, fallback := range map[*string]string{
+		&t.Panel: d.Panel, &t.Bar: d.Bar, &t.Info: d.Info,
+		&t.Success: d.Success, &t.SelectionText: d.SelectionText,
+	} {
+		if *field == "" {
+			*field = fallback
+		}
 	}
 	if t.Font == "" {
 		t.Font = d.Font

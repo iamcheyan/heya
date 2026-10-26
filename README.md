@@ -10,6 +10,7 @@ for is Kindle + iPod + Linux launcher + Pocket OS.
 - JSON pages, JSON themes, Nerd Font glyph icons (no PNG assets)
 - CJK text alongside the icon font, with a theme-configurable fallback face
 - 720x480 landscape, integer scaling
+- Handheld menus with large text, blue selection panels, a four-part status bar and a fixed control footer
 - Apps: drop a directory under `/storage/heya/apps` with an `app.json`; no code change
 
 ## Build and run
@@ -43,7 +44,7 @@ On a device the binary reads `/storage/heya/apps` and seeds
 | `themes/` | `default` and `light` theme JSON |
 | `examples/apps/` | sample applications |
 | `examples/font-samples/` | one app per script, for font review |
-| `integrations/rocknix/` | package.mk, systemd unit, `start_es.sh` patch |
+| `integrations/rocknix/` | boot unit and link to the authoritative ROCKNIX recipe |
 
 ## Documentation
 
@@ -58,8 +59,8 @@ On a device the binary reads `/storage/heya/apps` and seeds
 |---|---|---|---|
 | ![apps](docs/screenshots/apps.png) | ![system](docs/screenshots/system.png) | ![light](docs/screenshots/apps-light-theme.png) | ![about](docs/screenshots/about.png) |
 
-Rendered by `make dump` at 720x480 with the bundled Nerd Font. The app list
-carries CJK labels, drawn through the fallback face. Dumps use a neutral demo
+Rendered at 720x480 with the bundled Nerd Font and the handheld panel theme.
+CJK labels use the fallback face. Dumps use a neutral demo
 device, so no real hostname, address or memory layout is baked into the images.
 
 Font review sheet — both themes, one specimen per script, plus scale 8 and 32:
@@ -75,3 +76,37 @@ Milestones M1–M5 are implemented and verified on a Linux PC (menu rendering, a
 launching and return, JSON themes, app scanning, system page). M6 (replacing the
 ROCKNIX frontend) ships as integration files; it needs an image build and a device
 run to be accepted.
+
+## Connectivity and device controls
+
+In System, select Wi-Fi or Bluetooth with physical A to open its device list.
+Left/right switches the selected radio off/on. Volume and brightness change in
+5% steps with left/right; controls use the distro's `heya-control` helper.
+
+Wi-Fi supports scanning, open/WPA/WPA2/WPA3 connections, saved profiles,
+disconnection and forgetting a saved network. Enterprise/WEP connections require
+an existing system profile. NetworkManager saves successful connection profiles.
+Passwords go directly over D-Bus, never into command arguments or the journal.
+
+Bluetooth supports scanning, pairing, numeric confirmation, PIN/passkey input,
+keyboard pairing-code display, reconnect, disconnect and removal. BlueZ stores
+bonds. Only the selected device can use heya's temporary pairing agent.
+
+The onscreen keyboard uses D-pad + A. L changes case, R selects symbols,
+SELECT deletes, START submits and B cancels. A physical keyboard also works.
+Wi-Fi passwords are masked. Scans and connections run in the background; cancel
+waits for cleanup before another radio operation starts. Settings changes finish
+before accepting another change.
+
+Set `HEYA_SIMULATOR=1` to preview demo networks and devices without touching host
+radios. Actual device pairing, saved reconnection after reboot, suspend/resume,
+and audio routing still require hardware testing.
+
+The backend follows the [NetworkManager D-Bus API](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.html)
+and [BlueZ Agent API](https://github.com/bluez/bluez/blob/master/doc/org.bluez.Agent.rst).
+
+| Wi-Fi | Password keyboard | Bluetooth | Pairing confirmation |
+|---|---|---|---|
+| ![Wi-Fi](docs/screenshots/wifi.png) | ![Password](docs/screenshots/wifi-password.png) | ![Bluetooth](docs/screenshots/bluetooth.png) | ![Pairing](docs/screenshots/bluetooth-pairing.png) |
+
+Connectivity screenshots use demo devices; they do not show hardware validation.

@@ -92,3 +92,43 @@ func TestProbeReadsWifiFromRfkill(t *testing.T) {
 		t.Fatalf("bluetooth = %+v", status)
 	}
 }
+
+func TestBatteryPlusAndDischarging(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "tmp/battery.percent", "63")
+	write(t, root, "sys/class/power_supply/axp20x-battery/type", "Battery")
+	write(t, root, "sys/class/power_supply/axp20x-battery/uevent", "POWER_SUPPLY_CAPACITY=44\nPOWER_SUPPLY_STATUS=Discharging\n")
+	p := &Probe{Root: root}
+	var s Status
+	p.readBattery(&s)
+	if !s.BatteryKnown || s.BatteryPercent != 63 || !s.ChargingKnown || s.Charging {
+		t.Fatalf("battery = %+v", s)
+	}
+}
+
+func TestControlValidationAndSimulator(t *testing.T) {
+	calls := 0
+	p := &Probe{Run: func(name string, args ...string) (string, error) {
+		calls++
+		if name != "heya-control" || len(args) != 2 || args[0] != "volume" || args[1] != "55" {
+			t.Fatalf("command %s %v", name, args)
+		}
+		return "", nil
+	}}
+	t.Setenv("HEYA_SIMULATOR", "")
+	for _, pair := range [][2]string{{"volume", "101"}, {"brightness", "-1"}, {"wifi", "on; reboot"}, {"reboot", "on"}} {
+		if p.Control(pair[0], pair[1]) == nil {
+			t.Fatalf("accepted %v", pair)
+		}
+	}
+	if calls != 0 {
+		t.Fatal("invalid control executed")
+	}
+	if err := p.Control("volume", "55"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HEYA_SIMULATOR", "1")
+	if p.Control("volume", "55") == nil || calls != 1 {
+		t.Fatal("simulator changed host")
+	}
+}

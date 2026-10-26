@@ -34,6 +34,38 @@ func TestNavigationWraps(t *testing.T) {
 	}
 }
 
+func TestApplicationRowsKeepCapabilityMetadataOutOfMenu(t *testing.T) {
+	l := New(model.Page{Title: "Applications", Items: []model.Item{
+		{Name: "Sonata", Exec: "/usr/bin/sonata", Permissions: []string{"audio", "storage"}, Features: []string{"resume-support"}},
+	}}, nil, nil)
+	if value := l.Frame().Rows[0].Value; value != "" {
+		t.Fatalf("application row shows implementation metadata: %s", value)
+	}
+}
+
+func TestStatusHasFourFixedSlots(t *testing.T) {
+	status := testLauncher().Frame().Status
+	if len(status) != 4 || status[0] != "HEYA" || status[1] != "WIFI: --" || status[2] != "BT: --" || status[3] != "BAT: --" {
+		t.Fatalf("unexpected status bar: %v", status)
+	}
+}
+
+func TestScrollOffsetUsesTheRenderedRowCount(t *testing.T) {
+	page := model.Page{Title: "Applications"}
+	for i := 0; i < 8; i++ {
+		page.Items = append(page.Items, model.Item{Name: "App", Exec: "/bin/true"})
+	}
+	l := New(page, nil, nil)
+	l.SetVisibleRows(3)
+	for i := 0; i < 7; i++ {
+		l.Handle(input.Down)
+	}
+	frame := l.Frame()
+	if frame.Selected != 7 || frame.Offset != 5 || frame.Visible != 3 {
+		t.Fatalf("selected item is outside the visible menu: %+v", frame)
+	}
+}
+
 func TestConfirmOnExecReturnsCommand(t *testing.T) {
 	l := testLauncher()
 	cmd := l.Handle(input.Confirm)

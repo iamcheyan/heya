@@ -7,6 +7,7 @@ package system
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -69,7 +70,9 @@ func runCommand(name string, args ...string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(path, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Env = os.Environ()
 	out, err := cmd.Output()
 	if err != nil {
@@ -129,48 +132,44 @@ func (p *Probe) Read() Status {
 }
 
 func (p *Probe) readBattery(s *Status) {
-	for _, pattern := range []string{"sys/class/power_supply/*/capacity", "sys/class/power_supply/*/uevent"} {
-		path, ok := p.firstGlob(pattern)
-		if !ok {
-			continue
-		}
-		if strings.HasSuffix(path, "uevent") {
-			file, err := os.Open(path)
-			if err != nil {
-				continue
-			}
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if strings.HasPrefix(line, "POWER_SUPPLY_CAPACITY=") {
-					if v, err := strconv.Atoi(strings.TrimPrefix(line, "POWER_SUPPLY_CAPACITY=")); err == nil {
-						s.BatteryPercent = v
-						s.BatteryKnown = true
-					}
-				}
-				if strings.HasPrefix(line, "POWER_SUPPLY_STATUS=") {
-					s.Charging = strings.Contains(strings.ToLower(line), "charging")
-					s.ChargingKnown = true
-				}
-			}
-			file.Close()
-		} else {
-			if value, err := os.ReadFile(path); err == nil {
-				if v, err := strconv.Atoi(strings.TrimSpace(string(value))); err == nil {
-					s.BatteryPercent = v
-					s.BatteryKnown = true
-				}
-			}
-		}
-		if s.BatteryKnown {
-			break
+	if value, ok := p.readFile("tmp/battery.percent"); ok {
+		if n, err := strconv.Atoi(value); err == nil && n >= 0 && n <= 100 {
+			s.BatteryPercent, s.BatteryKnown = n, true
 		}
 	}
-	if !s.ChargingKnown {
-		if status, ok := p.readFile("sys/class/power_supply/battery/status"); ok {
-			s.Charging = strings.EqualFold(status, "Charging") || strings.EqualFold(status, "Full")
+	supplies, _ := filepath.Glob(p.path("sys/class/power_supply/*"))
+	for _, supply := range supplies {
+		read := func(name string) string {
+			b, _ := os.ReadFile(filepath.Join(supply, name))
+			return strings.TrimSpace(string(b))
+		}
+		if kind := read("type"); kind != "" && kind != "Battery" {
+			continue
+		}
+		values := map[string]string{}
+		for _, line := range strings.Split(read("uevent"), "\n") {
+			key, value, _ := strings.Cut(line, "=")
+			values[key] = value
+		}
+		capacity := read("capacity")
+		if capacity == "" {
+			capacity = values["POWER_SUPPLY_CAPACITY"]
+		}
+		if capacity == "" {
+			continue
+		}
+		if n, err := strconv.Atoi(capacity); err == nil && n >= 0 && n <= 100 && !s.BatteryKnown {
+			s.BatteryPercent, s.BatteryKnown = n, true
+		}
+		status := read("status")
+		if status == "" {
+			status = values["POWER_SUPPLY_STATUS"]
+		}
+		if status != "" {
+			s.Charging = status == "Charging" || status == "Full"
 			s.ChargingKnown = true
 		}
+		break
 	}
 }
 
@@ -272,6 +271,11 @@ func (p *Probe) readNetwork(s *Status) {
 		}
 	}
 
+	if s.BtKnown {
+		out, err := p.Run("systemctl", "is-active", "bluetooth.service")
+		s.BtOn = s.BtOn && err == nil && out == "active"
+	}
+
 	if out, err := p.Run("ip", "-4", "addr", "show", "up"); err == nil {
 		for _, line := range strings.Split(out, "\n") {
 			fields := strings.Fields(line)
@@ -284,10 +288,10 @@ func (p *Probe) readNetwork(s *Status) {
 }
 
 func (p *Probe) readVolume(s *Status) {
-	if out, err := p.Run("amixer", "get", "Master"); err == nil {
+	if out, err := p.Run("pactl", "get-sink-volume", "@DEFAULT_SINK@"); err == nil {
 		for _, token := range strings.Fields(out) {
-			if strings.HasPrefix(token, "[") && strings.HasSuffix(token, "%]") {
-				if v, err := strconv.Atoi(strings.Trim(token, "[]%")); err == nil {
+			if strings.HasSuffix(token, "%") {
+				if v, err := strconv.Atoi(strings.TrimSuffix(token, "%")); err == nil {
 					s.Volume = v
 					s.VolumeKnown = true
 					return
@@ -295,10 +299,10 @@ func (p *Probe) readVolume(s *Status) {
 			}
 		}
 	}
-	if out, err := p.Run("pactl", "get-sink-volume", "@DEFAULT_SINK@"); err == nil {
+	if out, err := p.Run("amixer", "get", "Master"); err == nil {
 		for _, token := range strings.Fields(out) {
-			if strings.HasSuffix(token, "%") {
-				if v, err := strconv.Atoi(strings.TrimSuffix(token, "%")); err == nil {
+			if strings.HasPrefix(token, "[") && strings.HasSuffix(token, "%]") {
+				if v, err := strconv.Atoi(strings.Trim(token, "[]%")); err == nil {
 					s.Volume = v
 					s.VolumeKnown = true
 					return

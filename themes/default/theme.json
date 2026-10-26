@@ -1,10 +1,15 @@
 {
-  "background": "#0b0e14",
-  "text": "#f2f4f8",
-  "muted": "#8b94a7",
+  "background": "#141820",
+  "text": "#f5f5f5",
+  "muted": "#a0a0a0",
   "accent": "#ffc400",
-  "selection": "#0f78d7",
+  "selection": "#0078d7",
   "font": "assets/JetBrainsMonoNerdFont-Regular.ttf",
   "font_cjk": "/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf",
-  "scale": 16
+  "scale": 16,
+  "panel": "#202632",
+  "bar": "#0e1218",
+  "info": "#00dcff",
+  "success": "#50dc78",
+  "selection_text": "#ffffff"
 }

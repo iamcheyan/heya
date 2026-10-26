@@ -3,8 +3,13 @@
   "text": "#20222a",
   "muted": "#6b7280",
   "accent": "#b4530a",
-  "selection": "#d9c8a9",
+  "selection": "#0078d7",
   "font": "assets/JetBrainsMonoNerdFont-Regular.ttf",
   "font_cjk": "/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf",
-  "scale": 16
+  "scale": 16,
+  "panel": "#e4e8ee",
+  "bar": "#d8dfe8",
+  "info": "#00748c",
+  "success": "#26743e",
+  "selection_text": "#ffffff"
 }

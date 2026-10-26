@@ -1,12 +1,58 @@
 package ui
 
 import (
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/iamcheyan/heya/internal/model"
 )
+
+func TestHandheldMenuUsesLegacyGeometry(t *testing.T) {
+	t.Setenv("SDL_VIDEODRIVER", "dummy")
+	theme := model.DefaultTheme()
+	theme.Font = filepath.Join("..", "..", "assets", "JetBrainsMonoNerdFont-Regular.ttf")
+	screen, err := Open(Options{Theme: theme, Width: 720, Height: 480, Hidden: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Close()
+	frame := Frame{Title: "Applications", Status: []string{"HEYA", "WIFI: ON", "BT: OFF", "BAT: 82%"},
+		Rows: []Row{{Label: "XMPlayer"}, {Label: "Sonata"}}, Selected: 0,
+		Hint: "[A] SELECT   [D-PAD] MOVE   [B] BACK"}
+	if err := screen.Render(frame); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "handheld.png")
+	if err := screen.SavePNG(path); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	img, err := png.Decode(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sample := range []struct {
+		x, y int
+		rgb  uint32
+	}{
+		{50, 110, 0x0078d7},
+		{50, 168, 0x202632},
+		{5, 10, 0x0e1218},
+		{5, 450, 0x0e1218},
+	} {
+		r, g, b, _ := img.At(sample.x, sample.y).RGBA()
+		got := uint32(r>>8)<<16 | uint32(g>>8)<<8 | uint32(b>>8)
+		if got != sample.rgb {
+			t.Errorf("pixel (%d,%d) = #%06x, want #%06x", sample.x, sample.y, got, sample.rgb)
+		}
+	}
+}
 
 func TestRenderFrameWritesPNG(t *testing.T) {
 	os.Setenv("SDL_VIDEODRIVER", "dummy")

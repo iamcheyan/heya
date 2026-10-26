@@ -12,9 +12,8 @@ from PIL import Image
 
 # Page backgrounds, status/hint bars and the selection fill are chrome, not ink.
 CHROME = {
-    "dark": {(11, 14, 20), (18, 22, 30), (15, 120, 215)},
-    # The status/hint bar tone is fixed in internal/ui, not themed.
-    "light": {(245, 242, 234), (217, 200, 169), (18, 22, 30)},
+    "dark": {(20, 24, 32), (14, 18, 24), (32, 38, 50), (0, 120, 215)},
+    "light": {(245, 242, 234), (228, 232, 238), (216, 223, 232), (0, 120, 215)},
 }
 
 # Ink floor for a 16px frame; other scales are proportional.

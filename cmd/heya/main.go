@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/iamcheyan/heya/internal/connectivity"
 	"github.com/iamcheyan/heya/internal/input"
 	"github.com/iamcheyan/heya/internal/launcher"
 	"github.com/iamcheyan/heya/internal/layout"
@@ -41,6 +43,8 @@ type options struct {
 }
 
 func main() {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	var opts options
 	flag.StringVar(&opts.appsDir, "apps", defaultAppsDir(), "directory containing one subdirectory per application")
 	flag.StringVar(&opts.themePath, "theme", "", "theme JSON file (default: built-in theme)")
@@ -122,6 +126,8 @@ func run(opts options) error {
 	}
 
 	l := launcher.New(rescan(), probe, icons)
+	l.SetConnectivity(connectivity.NewBackend())
+	defer l.Close()
 	l.AddPage("system", model.Page{Title: "System"})
 	host := demoHost
 	if opts.dumpDir == "" {
@@ -281,9 +287,7 @@ func eventLoop(l *launcher.Launcher, handler *input.Handler, theme model.Theme, 
 	}()
 
 	var controller *sdl.GameController
-	if sdl.NumJoysticks() > 0 {
-		controller = sdl.GameControllerOpen(0)
-	}
+	controller = openController()
 	defer func() {
 		if controller != nil {
 			controller.Close()
@@ -291,6 +295,13 @@ func eventLoop(l *launcher.Launcher, handler *input.Handler, theme model.Theme, 
 	}()
 
 	for {
+		l.Poll()
+		if l.TextEntryActive() {
+			sdl.StartTextInput()
+		} else {
+			sdl.StopTextInput()
+		}
+		l.SetVisibleRows(screen.VisibleRows())
 		if err := screen.Render(l.Frame()); err != nil {
 			return err
 		}
@@ -306,13 +317,43 @@ func eventLoop(l *launcher.Launcher, handler *input.Handler, theme model.Theme, 
 				return nil
 			case *sdl.KeyboardEvent:
 				if e.Type == sdl.KEYDOWN {
-					action = handler.Key(e.Keysym.Sym)
+					if l.TextEntryActive() {
+						switch e.Keysym.Sym {
+						case sdl.K_BACKSPACE:
+							l.DeleteText()
+						case sdl.K_RETURN:
+							action = input.Start
+						case sdl.K_ESCAPE:
+							action = input.Cancel
+						case sdl.K_UP:
+							action = input.Up
+						case sdl.K_DOWN:
+							action = input.Down
+						case sdl.K_LEFT:
+							action = input.Left
+						case sdl.K_RIGHT:
+							action = input.Right
+						case sdl.K_F10:
+							action = input.Quit
+						}
+					} else {
+						action = handler.Key(e.Keysym.Sym)
+					}
 				}
+			case *sdl.TextInputEvent:
+				l.TextInput(e.GetText())
 			case *sdl.ControllerButtonEvent:
 				if e.Type == sdl.CONTROLLERBUTTONDOWN {
 					action = handler.Button(sdl.GameControllerButton(e.Button))
 				}
 			case *sdl.ControllerDeviceEvent:
+				if controller != nil && !controller.Attached() {
+					controller.Close()
+					controller = nil
+				}
+				if controller == nil {
+					controller = openController()
+				}
 				if opts.verbose {
 					fmt.Fprintf(os.Stderr, "heya: controller event type=%d\n", e.Type)
 				}
@@ -328,6 +369,10 @@ func eventLoop(l *launcher.Launcher, handler *input.Handler, theme model.Theme, 
 			case launcher.CmdQuit:
 				return nil
 			case launcher.CmdExec:
+				if controller != nil {
+					controller.Close()
+					controller = nil
+				}
 				screen.Close()
 				screen = nil
 				runApp(command.Exec, command.Args, command.Environment, command.WorkingDirectory, opts)
@@ -336,10 +381,23 @@ func eventLoop(l *launcher.Launcher, handler *input.Handler, theme model.Theme, 
 					return err
 				}
 				screen = reopened
+				controller = openController()
+				l.RefreshStatus()
 			}
 		}
 		sdl.Delay(16)
 	}
+}
+
+func openController() *sdl.GameController {
+	for i := 0; i < sdl.NumJoysticks(); i++ {
+		if sdl.IsGameController(i) {
+			if controller := sdl.GameControllerOpen(i); controller != nil {
+				return controller
+			}
+		}
+	}
+	return nil
 }
 
 // mergeEnvironment applies app entries over the inherited process environment.
@@ -428,6 +486,7 @@ func dumpPages(l *launcher.Launcher, theme model.Theme, icons model.Icons, opts 
 	defer screen.Close()
 
 	render := func(name string) error {
+		l.SetVisibleRows(screen.VisibleRows())
 		if err := screen.Render(l.Frame()); err != nil {
 			return err
 		}

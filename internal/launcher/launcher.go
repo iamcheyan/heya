@@ -41,19 +41,23 @@ type Launcher struct {
 	status  system.Status
 	icons   model.Icons
 	message string
+	visible int
+	network *networkUI
+	confirm func()
 	Refresh func() model.Page
 }
 
 // New builds a launcher with the apps page as root.
 func New(apps model.Page, probe *system.Probe, icons model.Icons) *Launcher {
 	l := &Launcher{
-		apps:   apps,
-		pages:  map[string]model.Page{},
-		stack:  []string{"apps"},
-		index:  map[string]int{"apps": 0},
-		offset: map[string]int{"apps": 0},
-		probe:  probe,
-		icons:  icons,
+		apps:    apps,
+		pages:   map[string]model.Page{},
+		stack:   []string{"apps"},
+		index:   map[string]int{"apps": 0},
+		offset:  map[string]int{"apps": 0},
+		probe:   probe,
+		visible: 6,
+		icons:   icons,
 	}
 	if probe != nil {
 		l.status = probe.Read()
@@ -87,18 +91,12 @@ func (l *Launcher) rows(pageID string) []ui.Row {
 		rows := make([]ui.Row, 0, len(l.apps.Items))
 		for _, item := range l.apps.Items {
 			value := pageHint(item)
-			if item.Exec != "" {
-				value = strings.Join(item.Permissions, ",")
-				if len(item.Features) > 0 {
-					if value != "" {
-						value += " · "
-					}
-					value += strings.Join(item.Features, ",")
-				}
-			}
 			rows = append(rows, ui.Row{Label: item.Name, Icon: l.glyph(item.Icon), Value: value})
 		}
 		return rows
+	}
+	if pageID == "wifi" || pageID == "wifi-device" || pageID == "bluetooth" || pageID == "bluetooth-device" {
+		return l.networkRows(pageID)
 	}
 	if pageID == "system" {
 		return l.systemRows()
@@ -241,6 +239,10 @@ func (l *Launcher) Title() string {
 		return "Applications"
 	case "system":
 		return "System"
+	case "wifi", "wifi-device":
+		return "Wi-Fi"
+	case "bluetooth", "bluetooth-device":
+		return "Bluetooth"
 	default:
 		if page, ok := l.pages[l.currentPage()]; ok && page.Title != "" {
 			return page.Title
@@ -261,31 +263,60 @@ func (l *Launcher) Frame() ui.Frame {
 		selected = 0
 	}
 
-	status := []string{"HEYA"}
-	if l.status.Hostname != "" {
-		status = append(status, l.status.Hostname)
+	status := []string{"HEYA", "WIFI: --", "BT: --", "BAT: --"}
+	if l.status.WifiKnown {
+		status[1] = "WIFI: " + strings.ToUpper(onOff(l.status.WifiOn))
+	}
+	if l.status.BtKnown {
+		status[2] = "BT: " + strings.ToUpper(onOff(l.status.BtOn))
 	}
 	if l.status.BatteryKnown {
-		status = append(status, fmt.Sprintf("BAT %d%%", l.status.BatteryPercent))
-	}
-	if l.status.IP != "" {
-		status = append(status, l.status.IP)
+		status[3] = fmt.Sprintf("BAT: %d%%", l.status.BatteryPercent)
 	}
 
-	hint := "[A] Select   [B] Back   [D-PAD] Move   [SELECT] Rescan"
+	hint := "[A] SELECT   [D-PAD] MOVE   [B] EXIT"
 	if pageID == "system" {
-		hint = "[B] Back   [SELECT] Refresh"
+		hint = "[A] OPEN   [LEFT/RIGHT] ADJUST   [B] BACK"
+	} else if pageID != "apps" {
+		hint = "[D-PAD] SCROLL   [B] BACK"
 	}
 
-	return ui.Frame{
+	frame := ui.Frame{
 		Title:    l.Title(),
 		Rows:     rows,
 		Selected: selected,
 		Offset:   l.offset[pageID],
+		Visible:  l.visible,
 		Status:   status,
 		Hint:     hint,
 		Message:  l.message,
 	}
+	if l.networkPage() {
+		frame.Hint = "[A] SELECT   [SELECT] SCAN   [B] BACK"
+	}
+	if n := l.network; n != nil {
+		if n.busy && frame.Message == "" {
+			frame.Message = "Working... [B] Cancel"
+		}
+		if p := n.prompt; p != nil {
+			frame.Title = p.Title
+			frame.Rows = []ui.Row{{Label: p.Text}}
+			frame.Selected = 0
+			frame.Offset = 0
+			frame.Message = "[A] Confirm   [B] Cancel"
+			if p.Display {
+				frame.Message = "Waiting for other device... [B] Cancel"
+			}
+		}
+		if e := n.editor; e != nil {
+			frame.Title = e.title
+			frame.Rows = e.rows()
+			frame.Selected = e.row + 1
+			frame.Offset = max(0, frame.Selected-l.visible+1)
+			frame.Message = "[A] TYPE  [START] OK  [SELECT] DEL  [B] CANCEL"
+		}
+	}
+	return frame
 }
 
 // Handle applies an input action and returns a command for the host.
@@ -294,7 +325,21 @@ func (l *Launcher) Handle(action input.Action) Command {
 	rows := l.rows(pageID)
 	count := len(rows)
 
+	if action == input.Quit {
+		l.Close()
+		return Command{Kind: CmdQuit}
+	}
+	if n := l.network; n != nil && (n.busy || n.prompt != nil || n.editor != nil) {
+		l.handleNetwork(action)
+		return Command{}
+	}
 	l.message = ""
+	if l.networkPage() && l.handleNetwork(action) {
+		return Command{}
+	}
+	if pageID == "system" && l.adjustSetting(action) {
+		return Command{}
+	}
 
 	switch action {
 	case input.Up:
@@ -320,6 +365,11 @@ func (l *Launcher) Handle(action input.Action) Command {
 			}
 		}
 	case input.Select:
+		if pageID == "system" {
+			l.RefreshStatus()
+			l.message = "Status refreshed"
+			break
+		}
 		if l.Refresh != nil {
 			l.SetApps(l.Refresh())
 			l.RefreshStatus()
@@ -348,6 +398,9 @@ func (l *Launcher) Handle(action input.Action) Command {
 	case input.Cancel:
 		if len(l.stack) > 1 {
 			l.stack = l.stack[:len(l.stack)-1]
+			if l.networkPage() {
+				l.scanNetwork()
+			}
 			return Command{}
 		}
 		return Command{Kind: CmdQuit}
@@ -377,7 +430,7 @@ func (l *Launcher) currentItem(pageID string, index int) *model.Item {
 }
 
 func (l *Launcher) clampOffset(pageID string, count int) {
-	const visible = 6
+	visible := l.visible
 	index := l.index[pageID]
 	offset := l.offset[pageID]
 	if index < offset {
@@ -393,6 +446,14 @@ func (l *Launcher) clampOffset(pageID string, count int) {
 		offset = max
 	}
 	l.offset[pageID] = offset
+}
+
+func (l *Launcher) SetVisibleRows(count int) {
+	if count < 1 {
+		count = 1
+	}
+	l.visible = count
+	l.clampOffset(l.currentPage(), len(l.rows(l.currentPage())))
 }
 
 // Message returns the transient status message.

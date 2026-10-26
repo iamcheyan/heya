@@ -55,8 +55,8 @@ func countAccentPixels(t *testing.T, icon rune) int {
 		t.Fatal(err)
 	}
 	count := 0
-	for y := 60; y < 130; y++ {
-		for x := 8; x < 44; x++ {
+	for y := 92; y < 140; y++ {
+		for x := 60; x < 88; x++ {
 			r, g, b, _ := img.At(x, y).RGBA()
 			if uint8(r>>8) == accent.R && uint8(g>>8) == accent.G && uint8(b>>8) == accent.B {
 				count++
