@@ -12,6 +12,7 @@ func TestRenderFrameWritesPNG(t *testing.T) {
 	os.Setenv("SDL_VIDEODRIVER", "dummy")
 	theme := model.DefaultTheme()
 	theme.Font = filepath.Join("..", "..", "assets", "JetBrainsMonoNerdFont-Regular.ttf")
+	theme.FontCJK = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 	if _, err := os.Stat(theme.Font); err != nil {
 		t.Skipf("font not available: %v", err)
 	}

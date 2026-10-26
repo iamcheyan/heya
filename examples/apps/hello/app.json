@@ -1,7 +1,7 @@
 {
-  "name": "Hello",
+  "name": "你好 Hello",
   "icon": "nf-md-application",
   "exec": "/usr/bin/printf",
-  "args": ["Hello from heya\n"],
+  "args": ["你好，世界 Hello from heya\n"],
   "category": "examples"
 }

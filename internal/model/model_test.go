@@ -16,6 +16,9 @@ func TestThemeNormalizeFillsDefaults(t *testing.T) {
 	if theme.Scale != 16 {
 		t.Fatalf("scale = %d, want 16", theme.Scale)
 	}
+	if theme.Font == "" || theme.FontCJK == "" {
+		t.Fatalf("font defaults not applied: %+v", theme)
+	}
 }
 
 func TestThemeNormalizeClampsScale(t *testing.T) {

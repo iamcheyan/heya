@@ -115,11 +115,13 @@ type Theme struct {
 	Accent     string `json:"accent"`
 	Selection  string `json:"selection"`
 	Font       string `json:"font"`
+	FontCJK    string `json:"font_cjk"`
+	FontLatin  string `json:"font_latin"`
 	Scale      int    `json:"scale"`
 }
 
 func DefaultTheme() Theme {
-	return Theme{Background: "#0b0e14", Text: "#f2f4f8", Muted: "#8b94a7", Accent: "#ffc400", Selection: "#0f78d7", Scale: 16}
+	return Theme{Background: "#0b0e14", Text: "#f2f4f8", Muted: "#8b94a7", Accent: "#ffc400", Selection: "#0f78d7", Font: "assets/JetBrainsMonoNerdFont-Regular.ttf", FontCJK: "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", Scale: 16}
 }
 func (t *Theme) Normalize() {
 	d := DefaultTheme()
@@ -137,6 +139,15 @@ func (t *Theme) Normalize() {
 	}
 	if t.Selection == "" {
 		t.Selection = d.Selection
+	}
+	if t.Font == "" {
+		t.Font = d.Font
+	}
+	if t.FontCJK == "" {
+		t.FontCJK = d.FontCJK
+	}
+	if t.FontLatin == "" {
+		t.FontLatin = d.FontLatin
 	}
 	switch t.Scale {
 	case 8, 16, 32:

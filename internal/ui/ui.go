@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -21,6 +22,16 @@ var DefaultFontCandidates = []string{
 	"assets/JetBrainsMonoNerdFont-Regular.ttf",
 	"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 	"/usr/share/fonts/TTF/DejaVuSans.ttf",
+}
+
+// DefaultCJKFontCandidates support user-visible Chinese/Japanese/Korean text.
+var DefaultCJKFontCandidates = []string{
+	"/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf",
+	"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+	"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+	"/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+	"/usr/share/heya/assets/NotoSansCJKsc-Regular.otf",
+	"/usr/share/heya/assets/NotoSansCJK-Regular.ttc",
 }
 
 // ParseColor converts "#rrggbb" into an SDL colour.
@@ -81,6 +92,15 @@ func resolveFont(theme model.Theme) (string, error) {
 	return "", fmt.Errorf("no font found; tried %v", DefaultFontCandidates)
 }
 
+func needsCJKFont(text string) bool {
+	for _, r := range text {
+		if r > 0x024f {
+			return true
+		}
+	}
+	return false
+}
+
 // Row is one selectable line.
 type Row struct {
 	Label string
@@ -102,16 +122,18 @@ type Frame struct {
 
 // UI owns the window, renderer, font and text cache.
 type UI struct {
-	win    *sdl.Window
-	ren    *sdl.Renderer
-	font   *ttf.Font
-	theme  model.Theme
-	pal    palette
-	icons  model.Icons
-	cache  map[string]*sdl.Texture
-	Width  int32
-	Height int32
-	scale  int32
+	win        *sdl.Window
+	ren        *sdl.Renderer
+	font       *ttf.Font
+	cjkFont    *ttf.Font
+	theme      model.Theme
+	pal        palette
+	icons      model.Icons
+	cache      map[string]*sdl.Texture
+	textWidths map[string]int32
+	Width      int32
+	Height     int32
+	scale      int32
 }
 
 // Options configures UI creation.
@@ -141,6 +163,33 @@ func Open(opts Options) (*UI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open font %s: %w", fontPath, err)
 	}
+	cjkPath := opts.Theme.FontCJK
+	if cjkPath != "" && !filepath.IsAbs(cjkPath) {
+		if _, statErr := os.Stat(cjkPath); statErr != nil {
+			for _, candidate := range []string{filepath.Join(filepath.Dir(opts.Theme.Font), filepath.Base(cjkPath)), filepath.Join("assets", filepath.Base(cjkPath)), filepath.Join("/usr/share/heya/assets", filepath.Base(cjkPath))} {
+				if _, candidateErr := os.Stat(candidate); candidateErr == nil {
+					cjkPath = candidate
+					break
+				}
+			}
+		}
+	}
+	if cjkPath == "" {
+		for _, candidate := range DefaultCJKFontCandidates {
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				cjkPath = candidate
+				break
+			}
+		}
+	}
+	var cjkFont *ttf.Font
+	if cjkPath != "" {
+		cjkFont, err = ttf.OpenFont(cjkPath, opts.Theme.Scale)
+		if err != nil {
+			font.Close()
+			return nil, fmt.Errorf("open CJK font %s: %w", cjkPath, err)
+		}
+	}
 
 	flags := uint32(sdl.WINDOW_SHOWN)
 	if opts.Hidden {
@@ -166,8 +215,8 @@ func Open(opts Options) (*UI, error) {
 	}
 
 	return &UI{
-		win: win, ren: ren, font: font, theme: opts.Theme, pal: pal,
-		icons: opts.Icons, cache: map[string]*sdl.Texture{},
+		win: win, ren: ren, font: font, cjkFont: cjkFont, theme: opts.Theme, pal: pal,
+		icons: opts.Icons, cache: map[string]*sdl.Texture{}, textWidths: map[string]int32{},
 		Width: opts.Width, Height: opts.Height, scale: int32(opts.Theme.Scale),
 	}, nil
 }
@@ -178,9 +227,14 @@ func (u *UI) Close() {
 		texture.Destroy()
 	}
 	u.cache = map[string]*sdl.Texture{}
+	u.textWidths = map[string]int32{}
 	if u.font != nil {
 		u.font.Close()
 		u.font = nil
+	}
+	if u.cjkFont != nil {
+		u.cjkFont.Close()
+		u.cjkFont = nil
 	}
 	if u.ren != nil {
 		u.ren.Destroy()
@@ -199,16 +253,22 @@ func (u *UI) texture(text string, c sdl.Color) (*sdl.Texture, error) {
 	if texture, ok := u.cache[key]; ok {
 		return texture, nil
 	}
-	surface, err := u.font.RenderUTF8Blended(text, c)
+	font := u.font
+	if u.cjkFont != nil && needsCJKFont(text) {
+		font = u.cjkFont
+	}
+	surface, err := font.RenderUTF8Blended(text, c)
 	if err != nil {
 		return nil, err
 	}
 	defer surface.Free()
+	width := surface.W
 	texture, err := u.ren.CreateTextureFromSurface(surface)
 	if err != nil {
 		return nil, err
 	}
 	u.cache[key] = texture
+	u.textWidths[key] = int32(width)
 	return texture, nil
 }
 
@@ -220,10 +280,12 @@ func (u *UI) drawText(text string, x, y int32, c sdl.Color) int32 {
 	if err != nil {
 		return 0
 	}
-	_, _, w, h, err := texture.Query()
+	_, _, _, h, err := texture.Query()
 	if err != nil {
 		return 0
 	}
+	key := text + "|" + strconv.Itoa(int(c.R)) + "," + strconv.Itoa(int(c.G)) + "," + strconv.Itoa(int(c.B))
+	w := u.textWidths[key]
 	dst := sdl.Rect{X: x, Y: y, W: w, H: h}
 	_ = u.ren.Copy(texture, nil, &dst)
 	return w

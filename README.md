@@ -43,7 +43,8 @@ On a device the binary reads `/storage/heya/apps` and seeds
 
 ## Documentation
 
-- [`PROJECT_PLAN.md`](PROJECT_PLAN.md) — architecture, module boundaries, JSON protocol, milestones, risks
+- [PROJECT_PLAN.md](PROJECT_PLAN.md) — architecture, module boundaries, JSON protocol, milestones, risks
+- [docs/cpr66-fonts.md](docs/cpr66-fonts.md) — CJK font configuration and verification
 - [`docs/rocknix-architecture.md`](docs/rocknix-architecture.md) — ROCKNIX boot chain, frontend entry points, game-launch contract
 - [`integrations/rocknix/README.md`](integrations/rocknix/README.md) — installing heya as the boot frontend
 

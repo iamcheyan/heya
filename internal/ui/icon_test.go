@@ -17,6 +17,7 @@ func countAccentPixels(t *testing.T, icon rune) int {
 	os.Setenv("SDL_VIDEODRIVER", "dummy")
 	theme := model.DefaultTheme()
 	theme.Font = filepath.Join("..", "..", "assets", "JetBrainsMonoNerdFont-Regular.ttf")
+	theme.FontCJK = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 
 	screen, err := Open(Options{Theme: theme, Icons: model.Icons{}, Width: 720, Height: 480, Hidden: true})
 	if err != nil {
