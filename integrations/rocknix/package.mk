@@ -2,10 +2,10 @@
 # heya — JSON-driven launcher shell
 
 PKG_NAME="heya"
-PKG_VERSION="v0.2.0"
+PKG_VERSION="51ee9bdfa2ef6685cc58e6bae9a78ef69681b8cb"
 PKG_LICENSE="MIT"
 PKG_SITE="https://github.com/iamcheyan/heya"
-PKG_URL="${PKG_SITE}/archive/refs/tags/${PKG_VERSION}.tar.gz"
+PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain SDL2 SDL2_ttf"
 PKG_DEPENDS_HOST="go:host"
 PKG_LONGDESC="Lightweight JSON-driven launcher shell for Linux handhelds"
