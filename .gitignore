@@ -1,0 +1,5 @@
+heya
+heya-arm64
+build/
+*.test
+.gocache/

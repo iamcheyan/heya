@@ -1,0 +1,16 @@
+Launch heya instead of the bundled launcher/EmulationStation.
+Keep the handheld-launcher fallback: if heya is missing, boot still works.
+
+--- a/projects/ROCKNIX/packages/ui/emulationstation/sources/start_es.sh
++++ b/projects/ROCKNIX/packages/ui/emulationstation/sources/start_es.sh
+@@ -14,6 +14,10 @@
+ 
+ scanout_reset_stale
+ 
++if [ -x /usr/bin/heya ]; then
++  exec /usr/bin/heya --theme /storage/heya/themes/theme.json --apps /storage/heya/apps
++fi
++
+ if [ -x /usr/bin/handheld-launcher ]; then
+   exec /usr/bin/handheld-launcher
+ fi

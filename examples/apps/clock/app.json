@@ -1,0 +1,6 @@
+{
+  "name": "Clock",
+  "icon": "nf-md-clock",
+  "exec": "/usr/bin/date",
+  "category": "examples"
+}

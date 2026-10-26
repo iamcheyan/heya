@@ -1,0 +1,9 @@
+{
+  "background": "#f5f2ea",
+  "text": "#20222a",
+  "muted": "#6b7280",
+  "accent": "#b4530a",
+  "selection": "#d9c8a9",
+  "font": "assets/JetBrainsMonoNerdFont-Regular.ttf",
+  "scale": 16
+}

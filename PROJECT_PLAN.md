@@ -238,3 +238,20 @@ M6 前置条件：M1–M5 在实机验证通过，且 `docs/rocknix-architecture
 6. Rocknix 启动流程分析：`docs/rocknix-architecture.md`。
 
 架构确认后再进入 M1 编码。
+
+---
+
+## 11. 实施状态（2026-10-26）
+
+| 里程碑 | 状态 | 证据 |
+|---|---|---|
+| M1 显示菜单 | 完成 | `internal/ui`、`internal/input`；720×480 渲染由 `make dump` 产出 PNG 验证 |
+| M2 启动程序 | 完成 | `launcher.CmdExec` + `cmd/heya` 重新打开 UI；实测启动 `/usr/bin/printf` 后返回菜单 |
+| M3 主题系统 | 完成 | `themes/default`、`themes/light`；同页面背景像素 `#0b0e14` → `#f5f2ea` 验证 |
+| M4 应用扫描 | 完成 | `internal/registry` 扫描 `apps/*/app.json`；`SELECT` 键运行时重扫 |
+| M5 系统信息 | 完成 | `internal/system` 读取 battery/temp/mem/storage/net/volume/brightness/ZRAM，缺失显示 Unavailable |
+| M6 替换 ES | 集成文件就绪 | `integrations/rocknix/`：package.mk、heya.service、start_es.sh.patch；待镜像构建与实机验收 |
+
+测试：`go test ./...` 覆盖 model/registry/input/launcher/system/ui（含图标像素、主题色、探测降级）。
+
+尚未完成（需实机/镜像）：ARM64 交叉链接（需 SDL2/SDL2_ttf aarch64 sysroot）、镜像内打包、H700 实机启动与游戏回归。

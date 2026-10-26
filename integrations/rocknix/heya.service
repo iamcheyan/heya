@@ -1,0 +1,22 @@
+[Unit]
+Description=heya launcher shell
+Requires=sway.service
+After=sway.service
+Conflicts=essway.service
+
+[Service]
+Type=simple
+Environment=HOME=/storage
+Environment=XDG_RUNTIME_DIR=/var/run/0-runtime-dir
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=SDL_VIDEODRIVER=wayland
+Environment=SDL_AUDIODRIVER=pulseaudio
+EnvironmentFile=/etc/profile
+ExecStart=/usr/bin/heya --theme /storage/heya/themes/theme.json --apps /storage/heya/apps
+Restart=always
+RestartSec=2
+KillMode=process
+TimeoutStopSec=3
+
+[Install]
+WantedBy=rocknix.target

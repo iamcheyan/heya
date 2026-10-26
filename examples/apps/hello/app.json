@@ -1,0 +1,7 @@
+{
+  "name": "Hello",
+  "icon": "nf-md-application",
+  "exec": "/usr/bin/printf",
+  "args": ["Hello from heya\n"],
+  "category": "examples"
+}
