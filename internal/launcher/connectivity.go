@@ -35,10 +35,10 @@ type networkUI struct {
 	editor     *textEditor
 }
 type textEditor struct {
-	title, text     string
-	numeric         bool
-	page, row, col  int
-	submit          func(string)
+	title, text    string
+	numeric        bool
+	page, row, col int
+	submit         func(string)
 }
 
 func (l *Launcher) SetConnectivity(backend connectivity.Backend) {
@@ -142,6 +142,9 @@ func (l *Launcher) Poll() {
 			default:
 				l.message = "Done [SELECT] Refresh"
 				l.RefreshStatus()
+				if r.kind == "service" {
+					l.refreshServices()
+				}
 				if l.currentPage() == "wifi-device" || l.currentPage() == "bluetooth-device" {
 					l.stack = l.stack[:len(l.stack)-1]
 					l.scanNetwork()

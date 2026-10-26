@@ -32,19 +32,20 @@ type Command struct {
 
 // Launcher holds the page stack and selection.
 type Launcher struct {
-	apps    model.Page
-	pages   map[string]model.Page
-	stack   []string
-	index   map[string]int
-	offset  map[string]int
-	probe   *system.Probe
-	status  system.Status
-	icons   model.Icons
-	message string
-	visible int
-	network *networkUI
-	confirm func()
-	Refresh func() model.Page
+	apps     model.Page
+	pages    map[string]model.Page
+	stack    []string
+	index    map[string]int
+	offset   map[string]int
+	probe    *system.Probe
+	status   system.Status
+	icons    model.Icons
+	message  string
+	visible  int
+	network  *networkUI
+	services []serviceEntry
+	confirm  func()
+	Refresh  func() model.Page
 }
 
 // New builds a launcher with the apps page as root.
@@ -99,7 +100,10 @@ func (l *Launcher) rows(pageID string) []ui.Row {
 		return l.networkRows(pageID)
 	}
 	if pageID == "system" {
-		return l.systemRows()
+		return l.systemRowsView()
+	}
+	if pageID == servicePageID {
+		return l.serviceRows()
 	}
 	page, ok := l.pages[pageID]
 	if !ok {
@@ -194,7 +198,7 @@ func (l *Launcher) systemRows() []ui.Row {
 		usbMode = s.USBMode
 	}
 
-	return []ui.Row{
+	rows := []ui.Row{
 		{Label: "Battery", Value: battery},
 		{Label: "Power", Value: charging},
 		{Label: "CPU temperature", Value: temp},
@@ -211,6 +215,20 @@ func (l *Launcher) systemRows() []ui.Row {
 		{Label: "USB mode", Value: usbMode},
 		{Label: "USB settings", Value: "›"},
 	}
+	return rows
+}
+
+// systemRowsView is what the System page renders: the probed rows plus the
+// Services shortcut when the image ships a service table.
+func (l *Launcher) systemRowsView() []ui.Row {
+	rows := l.systemRows()
+	if l.probe == nil {
+		return rows
+	}
+	if _, err := l.probe.Services(); err != nil {
+		return rows
+	}
+	return append(rows, ui.Row{Label: "Services", Value: "›"})
 }
 
 func usbPage() model.Page {
@@ -258,6 +276,8 @@ func (l *Launcher) Title() string {
 		return "System"
 	case "usb":
 		return "USB settings"
+	case servicePageID:
+		return "Services"
 	case "wifi", "wifi-device":
 		return "Wi-Fi"
 	case "bluetooth", "bluetooth-device":
@@ -303,14 +323,15 @@ func (l *Launcher) Frame() ui.Frame {
 	}
 
 	frame := ui.Frame{
-		Title:    l.Title(),
-		Rows:     rows,
-		Selected: selected,
-		Offset:   l.offset[pageID],
-		Visible:  l.visible,
-		Status:   status,
-		Hint:     hint,
-		Message:  l.message,
+		Title:           l.Title(),
+		TerminalProfile: pageID == "profile",
+		Rows:            rows,
+		Selected:        selected,
+		Offset:          l.offset[pageID],
+		Visible:         l.visible,
+		Status:          status,
+		Hint:            hint,
+		Message:         l.message,
 	}
 	if l.networkPage() {
 		frame.Hint = "[A] SELECT   [SELECT] SCAN   [B] BACK"
@@ -361,6 +382,9 @@ func (l *Launcher) Handle(action input.Action) Command {
 	if pageID == "system" && l.adjustSetting(action) {
 		return Command{}
 	}
+	if pageID == servicePageID && l.adjustService(action) {
+		return Command{}
+	}
 
 	switch action {
 	case input.Up:
@@ -405,6 +429,10 @@ func (l *Launcher) Handle(action input.Action) Command {
 			l.AddPage("usb", usbPage())
 			l.stack = append(l.stack, "usb")
 			l.index["usb"], l.offset["usb"] = 0, 0
+			return Command{}
+		}
+		if pageID == "system" && l.index[pageID] == len(l.systemRowsView())-1 {
+			l.pushServices()
 			return Command{}
 		}
 		if item == nil {

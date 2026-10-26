@@ -142,14 +142,15 @@ type Row struct {
 
 // Frame is everything the renderer needs for one picture.
 type Frame struct {
-	Title    string
-	Rows     []Row
-	Selected int
-	Offset   int
-	Visible  int
-	Status   []string
-	Hint     string
-	Message  string
+	Title           string
+	TerminalProfile bool
+	Rows            []Row
+	Selected        int
+	Offset          int
+	Visible         int
+	Status          []string
+	Hint            string
+	Message         string
 }
 
 // UI owns the window, renderer, font and text cache.
@@ -487,6 +488,10 @@ func (u *UI) Render(frame Frame) error {
 	_ = u.ren.Clear()
 	layout := u.layout()
 	px := func(n int32) int32 { return max(1, int32(float64(n)*layout.unit)) }
+	if frame.TerminalProfile {
+		u.renderSystemProfile(frame, px)
+		return nil
+	}
 
 	u.fill(sdl.Rect{W: u.Width, H: layout.top}, u.pal.bar)
 	slotWidth := u.Width / 4
@@ -577,6 +582,49 @@ func (u *UI) Render(frame Frame) error {
 	u.textInBox(line, sdl.Rect{X: px(16), Y: footer.Y + px(6), W: u.Width - px(32), H: footer.H - px(12)}, c, true)
 	u.ren.Present()
 	return nil
+}
+
+func (u *UI) renderSystemProfile(frame Frame, px func(int32) int32) {
+	black := sdl.Color{R: 0, G: 0, B: 0, A: 255}
+	green := sdl.Color{R: 112, G: 220, B: 151, A: 255}
+	softWhite := sdl.Color{R: 220, G: 228, B: 224, A: 255}
+	muted := sdl.Color{R: 92, G: 112, B: 103, A: 255}
+	cyan := sdl.Color{R: 95, G: 205, B: 220, A: 255}
+	_ = u.ren.SetDrawColor(black.R, black.G, black.B, black.A)
+	_ = u.ren.Clear()
+	margin := px(28)
+	u.drawText("heya@rocknix:~$ system-profile", margin, px(18), green)
+	u.fill(sdl.Rect{X: margin, Y: px(54), W: u.Width - 2*margin, H: px(1)}, muted)
+
+	logo := []string{
+		"  _   _",
+		" | | | |",
+		" | |_| |",
+		" |  _  |",
+		" |_| |_|",
+		"   HEYA",
+	}
+	logoY := px(150)
+	for i, line := range logo {
+		u.drawText(line, margin, logoY+int32(i)*px(30), green)
+	}
+	u.drawText("SYSTEM", margin, px(365), cyan)
+	u.drawText("INFORMATION", margin, px(392), muted)
+
+	profileX := max(px(245), u.Width*39/100)
+	rowTop := px(91)
+	rowGap := px(34)
+	labelWidth := px(112)
+	valueX := profileX + labelWidth
+	for i, row := range frame.Rows {
+		y := rowTop + int32(i)*rowGap
+		u.rowText(row.Label, sdl.Rect{X: profileX, Y: y, W: labelWidth - px(10), H: rowGap}, cyan, false, false)
+		u.rowText(row.Value, sdl.Rect{X: valueX, Y: y, W: u.Width - margin - valueX, H: rowGap}, softWhite, false, false)
+	}
+	u.fill(sdl.Rect{X: margin, Y: u.Height - px(48), W: u.Width - 2*margin, H: px(1)}, muted)
+	u.drawText("[B] BACK", margin, u.Height-px(34), muted)
+	u.drawText("ROCKNIX HANDHELD", u.Width-margin-px(210), u.Height-px(34), muted)
+	u.ren.Present()
 }
 
 // SavePNG writes the current render target to a PNG file.
