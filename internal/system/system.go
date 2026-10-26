@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/iamcheyan/heya/internal/capabilities"
 )
 
 // Status is one snapshot of device state.
@@ -336,6 +338,35 @@ func (p *Probe) readZram(s *Status) {
 		s.Zram = strings.Join(strings.Fields(out), " / ")
 	}
 }
+
+// SupportsWiFi reports whether a wireless network interface was detected.
+func (p *Probe) SupportsWiFi() bool {
+	matches, _ := filepath.Glob(p.path("sys/class/net/wl*"))
+	return len(matches) > 0
+}
+
+// SupportsBluetooth reports whether rfkill exposes Bluetooth support.
+func (p *Probe) SupportsBluetooth() bool {
+	out, err := p.Run("rfkill", "list")
+	return err == nil && strings.Contains(strings.ToLower(out), "bluetooth")
+}
+
+// SupportsBrightness reports whether a backlight control is present.
+func (p *Probe) SupportsBrightness() bool {
+	_, ok := p.firstGlob("sys/class/backlight/*/brightness")
+	return ok
+}
+
+// SupportsSuspend reports whether the kernel exports suspend states.
+func (p *Probe) SupportsSuspend() bool { _, ok := p.readFile("sys/power/state"); return ok }
+
+// SupportsBattery reports whether a power supply capacity is available.
+func (p *Probe) SupportsBattery() bool {
+	_, ok := p.firstGlob("sys/class/power_supply/*/capacity")
+	return ok
+}
+
+var _ capabilities.Device = (*Probe)(nil)
 
 // HasCommand reports whether a binary is available on this system.
 func (p *Probe) HasCommand(name string) bool {

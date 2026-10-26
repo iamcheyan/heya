@@ -61,6 +61,22 @@ func TestLoadJSONRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestAppNormalizeLegacyAndEntrypoint(t *testing.T) {
+	legacy := App{Name: "Music", Exec: "/usr/bin/music"}
+	legacy.Normalize("music-dir")
+	if legacy.ManifestVersion != 1 || legacy.ID != "music-dir" || legacy.Entrypoint != "/usr/bin/music" {
+		t.Fatalf("legacy normalization: %+v", legacy)
+	}
+	modern := App{Name: "Tool", ManifestVersion: 1, ID: "tool", Entrypoint: "/usr/bin/tool"}
+	modern.Normalize("other-dir")
+	if modern.Exec != modern.Entrypoint || modern.ID != "tool" {
+		t.Fatalf("modern normalization: %+v", modern)
+	}
+	if err := modern.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAppValidate(t *testing.T) {
 	cases := []struct {
 		app App

@@ -23,9 +23,11 @@ const (
 
 // Command is the launcher's output.
 type Command struct {
-	Kind CommandKind
-	Exec string
-	Args []string
+	Kind             CommandKind
+	Exec             string
+	Args             []string
+	Environment      []string
+	WorkingDirectory string
 }
 
 // Launcher holds the page stack and selection.
@@ -84,11 +86,17 @@ func (l *Launcher) rows(pageID string) []ui.Row {
 	if pageID == "apps" {
 		rows := make([]ui.Row, 0, len(l.apps.Items))
 		for _, item := range l.apps.Items {
-			rows = append(rows, ui.Row{
-				Label: item.Name,
-				Icon:  l.glyph(item.Icon),
-				Value: pageHint(item),
-			})
+			value := pageHint(item)
+			if item.Exec != "" {
+				value = strings.Join(item.Permissions, ",")
+				if len(item.Features) > 0 {
+					if value != "" {
+						value += " · "
+					}
+					value += strings.Join(item.Features, ",")
+				}
+			}
+			rows = append(rows, ui.Row{Label: item.Name, Icon: l.glyph(item.Icon), Value: value})
 		}
 		return rows
 	}
@@ -327,7 +335,7 @@ func (l *Launcher) Handle(action input.Action) Command {
 			return Command{}
 		}
 		if item.Exec != "" {
-			return Command{Kind: CmdExec, Exec: item.Exec, Args: item.Args}
+			return Command{Kind: CmdExec, Exec: item.Exec, Args: item.Args, Environment: item.Environment, WorkingDirectory: item.WorkingDirectory}
 		}
 	case input.Cancel:
 		if len(l.stack) > 1 {

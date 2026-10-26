@@ -1,4 +1,4 @@
-// Package registry discovers applications under the apps directory.
+// Package registry composes discovery providers into one application list.
 package registry
 
 import (
@@ -6,23 +6,40 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/iamcheyan/heya/internal/model"
 )
 
-// Registry scans a directory of applications, one subdirectory per app.
-type Registry struct {
-	Root string
-}
+// Provider discovers ordinary applications. Games and books use this same contract.
+type Provider interface{ Applications() ([]model.App, []error) }
+type Registry struct{ providers []Provider }
 
-// New returns a registry rooted at dir.
-func New(dir string) *Registry {
-	return &Registry{Root: dir}
-}
-
-// Scan returns the valid applications sorted by name, plus one error per
-// rejected entry. A missing root is not an error: it yields an empty list.
+func New(dir string) *Registry                         { return NewWithProviders(NewApplicationsProvider(dir)) }
+func NewWithProviders(providers ...Provider) *Registry { return &Registry{providers: providers} }
 func (r *Registry) Scan() ([]model.App, []error) {
+	var apps []model.App
+	var problems []error
+	for _, provider := range r.providers {
+		found, errs := provider.Applications()
+		apps = append(apps, found...)
+		problems = append(problems, errs...)
+	}
+	sort.Slice(apps, func(i, j int) bool {
+		if apps[i].Category != apps[j].Category {
+			return apps[i].Category < apps[j].Category
+		}
+		return apps[i].Name < apps[j].Name
+	})
+	return apps, problems
+}
+
+type ApplicationsProvider struct{ Root string }
+
+func NewApplicationsProvider(dir string) *ApplicationsProvider {
+	return &ApplicationsProvider{Root: dir}
+}
+func (r *ApplicationsProvider) Applications() ([]model.App, []error) {
 	entries, err := os.ReadDir(r.Root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -30,10 +47,9 @@ func (r *Registry) Scan() ([]model.App, []error) {
 		}
 		return nil, []error{err}
 	}
-
 	var apps []model.App
 	var problems []error
-
+	ids := map[string]bool{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -47,35 +63,30 @@ func (r *Registry) Scan() ([]model.App, []error) {
 			problems = append(problems, fmt.Errorf("%s: %w", entry.Name(), err))
 			continue
 		}
+		app.Normalize(entry.Name())
+		if strings.TrimSpace(app.ID) == "" {
+			problems = append(problems, fmt.Errorf("%s: application id is empty", entry.Name()))
+			continue
+		}
 		if err := app.Validate(); err != nil {
 			problems = append(problems, fmt.Errorf("%s: %w", entry.Name(), err))
 			continue
 		}
-		if app.Hidden {
+		if ids[app.ID] {
+			problems = append(problems, fmt.Errorf("%s: duplicate application id %q", entry.Name(), app.ID))
 			continue
 		}
-		apps = append(apps, app)
-	}
-
-	sort.Slice(apps, func(i, j int) bool {
-		if apps[i].Category != apps[j].Category {
-			return apps[i].Category < apps[j].Category
+		ids[app.ID] = true
+		if !app.Hidden {
+			apps = append(apps, app)
 		}
-		return apps[i].Name < apps[j].Name
-	})
+	}
 	return apps, problems
 }
-
-// Page converts scanned apps into a menu page.
 func Page(title string, apps []model.App) model.Page {
 	page := model.Page{Title: title}
 	for _, app := range apps {
-		page.Items = append(page.Items, model.Item{
-			Name: app.Name,
-			Icon: app.Icon,
-			Exec: app.Exec,
-			Args: app.Args,
-		})
+		page.Items = append(page.Items, model.Item{Name: app.Name, Icon: app.Icon, Exec: app.Entrypoint, Args: app.Args, Environment: app.Environment, WorkingDirectory: app.WorkingDirectory, Permissions: app.Permissions, Features: app.Features})
 	}
 	return page
 }

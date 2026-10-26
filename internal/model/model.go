@@ -8,17 +8,52 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 // App is one discoverable application, described by app.json.
 type App struct {
-	Name     string   `json:"name"`
-	Icon     string   `json:"icon"`
-	Exec     string   `json:"exec"`
-	Args     []string `json:"args,omitempty"`
-	Category string   `json:"category,omitempty"`
-	Hidden   bool     `json:"hidden,omitempty"`
+	ManifestVersion  int      `json:"manifestVersion,omitempty"`
+	ID               string   `json:"id,omitempty"`
+	Name             string   `json:"name"`
+	Description      string   `json:"description,omitempty"`
+	Version          string   `json:"version,omitempty"`
+	Author           string   `json:"author,omitempty"`
+	License          string   `json:"license,omitempty"`
+	Homepage         string   `json:"homepage,omitempty"`
+	Icon             string   `json:"icon"`
+	IconColor        string   `json:"iconColor,omitempty"`
+	Badge            string   `json:"badge,omitempty"`
+	Accent           string   `json:"accent,omitempty"`
+	Entrypoint       string   `json:"entrypoint,omitempty"`
+	Exec             string   `json:"exec,omitempty"`
+	Args             []string `json:"args,omitempty"`
+	Environment      []string `json:"environment,omitempty"`
+	WorkingDirectory string   `json:"workingDirectory,omitempty"`
+	Category         string   `json:"category,omitempty"`
+	Permissions      []string `json:"permissions,omitempty"`
+	Features         []string `json:"features,omitempty"`
+	Hidden           bool     `json:"hidden,omitempty"`
+}
+
+var identityPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
+// Normalize applies compatibility defaults to manifests predating versioning.
+func (a *App) Normalize(directory string) {
+	if a.ManifestVersion == 0 {
+		a.ManifestVersion = 1
+	}
+	if a.ID == "" {
+		a.ID = strings.ToLower(directory)
+		a.ID = strings.ReplaceAll(a.ID, " ", "-")
+	}
+	if a.Entrypoint == "" {
+		a.Entrypoint = a.Exec
+	}
+	if a.Exec == "" {
+		a.Exec = a.Entrypoint
+	}
 }
 
 // Validate rejects entries that cannot be launched safely.
@@ -26,33 +61,53 @@ func (a App) Validate() error {
 	if strings.TrimSpace(a.Name) == "" {
 		return errors.New("app name is empty")
 	}
-	if a.Exec == "" {
-		return fmt.Errorf("app %q has no exec", a.Name)
+	if a.ManifestVersion != 0 && a.ManifestVersion != 1 {
+		return fmt.Errorf("app %q has unsupported manifestVersion %d", a.Name, a.ManifestVersion)
 	}
-	if !filepath.IsAbs(a.Exec) {
+	if a.ID != "" && !identityPattern.MatchString(a.ID) {
+		return fmt.Errorf("app %q has invalid id %q", a.Name, a.ID)
+	}
+	if a.Entrypoint == "" && a.Exec == "" {
+		return fmt.Errorf("app %q has no entrypoint or exec", a.Name)
+	}
+	if a.Entrypoint != "" && !filepath.IsAbs(a.Entrypoint) {
+		return fmt.Errorf("app %q entrypoint must be an absolute path", a.Name)
+	}
+	if a.Exec != "" && !filepath.IsAbs(a.Exec) {
 		return fmt.Errorf("app %q exec must be an absolute path", a.Name)
+	}
+	if a.Exec != "" && a.Entrypoint != "" && a.Exec != a.Entrypoint {
+		return fmt.Errorf("app %q specifies conflicting entrypoint and exec", a.Name)
+	}
+	if a.WorkingDirectory != "" && !filepath.IsAbs(a.WorkingDirectory) {
+		return fmt.Errorf("app %q workingDirectory must be an absolute path", a.Name)
+	}
+	for _, value := range a.Environment {
+		key, _, ok := strings.Cut(value, "=")
+		if !ok || key == "" || strings.ContainsAny(key, " \t\x00") {
+			return fmt.Errorf("app %q has invalid environment entry %q", a.Name, value)
+		}
 	}
 	return nil
 }
 
-// Item is one row in a page. Either Exec (launch) or Page (navigate) is set.
 type Item struct {
-	Name   string   `json:"name"`
-	Icon   string   `json:"icon,omitempty"`
-	Exec   string   `json:"exec,omitempty"`
-	Args   []string `json:"args,omitempty"`
-	Page   string   `json:"page,omitempty"`
-	Action string   `json:"action,omitempty"`
-	Value  string   `json:"value,omitempty"`
+	Name             string   `json:"name"`
+	Icon             string   `json:"icon,omitempty"`
+	Exec             string   `json:"exec,omitempty"`
+	Args             []string `json:"args,omitempty"`
+	Environment      []string `json:"environment,omitempty"`
+	WorkingDirectory string   `json:"workingDirectory,omitempty"`
+	Permissions      []string `json:"permissions,omitempty"`
+	Features         []string `json:"features,omitempty"`
+	Page             string   `json:"page,omitempty"`
+	Action           string   `json:"action,omitempty"`
+	Value            string   `json:"value,omitempty"`
 }
-
-// Page is a menu page; static pages come from JSON, dynamic pages from the registry.
 type Page struct {
 	Title string `json:"title"`
 	Items []Item `json:"items"`
 }
-
-// Theme controls colours, font and integer scale factor.
 type Theme struct {
 	Background string `json:"background"`
 	Text       string `json:"text"`
@@ -63,20 +118,9 @@ type Theme struct {
 	Scale      int    `json:"scale"`
 }
 
-// DefaultTheme returns the built-in fallback theme.
 func DefaultTheme() Theme {
-	return Theme{
-		Background: "#0b0e14",
-		Text:       "#f2f4f8",
-		Muted:      "#8b94a7",
-		Accent:     "#ffc400",
-		Selection:  "#0f78d7",
-		Font:       "",
-		Scale:      16,
-	}
+	return Theme{Background: "#0b0e14", Text: "#f2f4f8", Muted: "#8b94a7", Accent: "#ffc400", Selection: "#0f78d7", Scale: 16}
 }
-
-// Normalize fills unset fields from the default theme and clamps the scale.
 func (t *Theme) Normalize() {
 	d := DefaultTheme()
 	if t.Background == "" {
@@ -101,10 +145,8 @@ func (t *Theme) Normalize() {
 	}
 }
 
-// Icons maps icon names such as "nf-md-music" to a hex Nerd Font codepoint.
 type Icons map[string]string
 
-// Glyph returns the rune for an icon name, or 0 when unknown.
 func (i Icons) Glyph(name string) rune {
 	hex, ok := i[name]
 	if !ok {
@@ -116,8 +158,6 @@ func (i Icons) Glyph(name string) rune {
 	}
 	return rune(v)
 }
-
-// LoadJSON decodes a JSON file into dst.
 func LoadJSON(path string, dst any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

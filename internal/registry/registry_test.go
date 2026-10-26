@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/iamcheyan/heya/internal/model"
 )
 
 func writeApp(t *testing.T, root, dir, body string) {
@@ -39,6 +41,50 @@ func TestScanCollectsValidApps(t *testing.T) {
 		t.Fatalf("got %d problems, want 2 (broken, badjson): %v", len(problems), problems)
 	}
 }
+
+func TestScanLegacyExamples(t *testing.T) {
+	apps, problems := New("../../examples/apps").Scan()
+	if len(problems) != 0 || len(apps) != 2 {
+		t.Fatalf("legacy examples: %d apps, %v", len(apps), problems)
+	}
+	if apps[0].ID != "clock" || apps[1].ID != "hello" {
+		t.Fatalf("legacy IDs: %+v", apps)
+	}
+}
+
+func TestScanRejectsUnknownManifestVersion(t *testing.T) {
+	root := t.TempDir()
+	writeApp(t, root, "future", `{"manifestVersion":2,"id":"future","name":"Future","entrypoint":"/bin/true"}`)
+	apps, problems := New(root).Scan()
+	if len(apps) != 0 || len(problems) != 1 {
+		t.Fatalf("future manifest should be isolated: %v %v", apps, problems)
+	}
+}
+
+func TestScanManifestV1AndDuplicateID(t *testing.T) {
+	root := t.TempDir()
+	writeApp(t, root, "one", `{"manifestVersion":1,"id":"reader","name":"Reader","entrypoint":"/usr/bin/reader","permissions":["storage"],"features":["resume-support"]}`)
+	writeApp(t, root, "two", `{"manifestVersion":1,"id":"reader","name":"Duplicate","entrypoint":"/bin/true"}`)
+	apps, problems := New(root).Scan()
+	if len(apps) != 1 || apps[0].ID != "reader" || apps[0].Entrypoint != "/usr/bin/reader" {
+		t.Fatalf("unexpected apps: %+v", apps)
+	}
+	if len(problems) != 1 {
+		t.Fatalf("duplicate id should be reported: %v", problems)
+	}
+}
+
+func TestProviderAggregation(t *testing.T) {
+	provider := fixedProvider{app: model.App{ID: "book", Name: "Books", ManifestVersion: 1, Entrypoint: "/usr/bin/books"}}
+	apps, problems := NewWithProviders(provider).Scan()
+	if len(problems) != 0 || len(apps) != 1 || apps[0].Name != "Books" {
+		t.Fatalf("provider result: %+v %v", apps, problems)
+	}
+}
+
+type fixedProvider struct{ app model.App }
+
+func (p fixedProvider) Applications() ([]model.App, []error) { return []model.App{p.app}, nil }
 
 func TestScanMissingRootIsEmpty(t *testing.T) {
 	apps, problems := New(filepath.Join(t.TempDir(), "nope")).Scan()
