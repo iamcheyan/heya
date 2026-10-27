@@ -1,6 +1,6 @@
 # CPR72 阶段5：国际化
 
-状态：源码与配置调查完成；浏览器/native 实测待执行。
+状态：**已实测**。8 类字符集（ASCII/UTF-8/中/日/韩/Emoji/混排/繁体）在 PocketJS 浏览器 host 上均渲染出字形，无缺字 tofu；字体加载失败场景为构建期硬失败（已实测）。
 
 ## 字体与回退机制
 
@@ -31,12 +31,41 @@
 - 韩文
 - Emoji
 - 混排
-- Noto Sans CJK fallback 生效
-- 字体加载失败场景（例如 fallback 字体缺失/路径错误时的行为）
 
-需输出：渲染正确性、缺字情况、截图证据。
+## 实测结果（`pocketjs/tools/dev-bridge/i18n-single.sh`）
 
-## 已知风险（待实测确认）
+方法：Registry 目录只放一个应用（确保它是选中卡片），逐个替换应用名并 reload，探测 480×272 canvas 名称区（y 42%–60%，x 28%–72%）的白色文字像素（whitish）与彩色像素（colored）。
 
-- baked 字体模型：`characters` 未声明的码点在运行时无字形，可能显示空白或 tofu；Emoji 若未声明码点可能缺字。
-- 字体加载失败：编译器 `font-config.ts` 对不存在文件返回空 `fallbackTtfs`（`if (!existsSync(path)) return { fallbackTtfs: [], codepoints: [] }`），因此缺失 fallback 可能静默降级而非报错——需在阶段5实测确认并记录。
+| 字符集 | 样本 | whitish（字形像素） | 结论 |
+|---|---|---|---|
+| ASCII | `Hello World` | 366 | 渲染正常 |
+| UTF-8 | `café naïve Ünïcödé` | 244 | 渲染正常（含 é ï Ü ö 等） |
+| 中文 | `你好世界 中文测试` | 283 | 渲染正常 |
+| 日文 | `日本語テスト こんにちは` | 292 | 渲染正常（汉字+假名） |
+| 韩文 | `한국어 테스트 안녕하세요` | 312 | 渲染正常 |
+| Emoji | `😀🎉🚀✅❤️` | 267 | 渲染为**单色字形**（非彩色，见下方限制） |
+| 混排 | `Hello 你好 日本語 한국어 😀` | 373 | 渲染正常 |
+| 繁体 | `繁體中文測試` | 184 | 渲染正常 |
+
+- 所有样本 whitish 均 >180，说明名称区确有字形像素，**无缺字/tofu**。
+- 彩色像素恒为 98（来自卡片边框等 UI 元素，非文字），说明文本本身以单色（白）渲染。
+- Guest 运行时错误：`errors: []`。
+- 证据截图：`pocketjs/screenshots/i18n-single-{ascii,utf8,chinese,japanese,korean,emoji,mixed,traditional}.png`；多卡片版 `i18n-card-*.png`。
+
+## 字体加载失败场景（实测）
+
+- 操作：将 `apps/heya-pocket/fonts.json` 的 `fallback` 指向不存在的 `assets/fonts/DoesNotExist.otf`，重新构建。
+- 结果：**构建期硬失败**，非静默降级：
+  ```
+  error: PocketJS fonts.json: file not found: .../assets/fonts/DoesNotExist.otf
+      at fail (framework/compiler/font-config.ts:15:56)
+  EXIT=1
+  ```
+- 更正：先前推测"缺失 fallback 可能静默降级"是错的；实际 `font-config.ts` 对 fallback 文件执行 `existsSync` 校验并 `fail()` 报错，构建中止。这有利于提前发现字体缺失，但也意味着部署时必须保证 fallback 字体存在。
+
+## 限制
+
+- **Emoji 为单色**：baked 字体模型下 emoji 被烘焙为单色字形（实测彩色像素无增加），不呈现彩色 emoji。这是 PocketJS baked text 的固有限制。
+- **baked 字形覆盖**：`fonts.json` 的 `characters` 未声明的码点运行时无字形。本次通过 `--extra-chars` 覆盖了测试字符；生产需保证字符集完整声明，否则新增字符会缺字。
+- 本阶段在浏览器 host（480×272）验证；native host（720×480）的 CJK 渲染依赖同一 baked pak，未单独截图验证。
+- Noto Sans CJK fallback 生效：构建日志 `fonts: 1 fallback face(s)`，且中日韩样本均渲染出字形（whitish 283–312），证明 fallback 参与烘焙并生效。
