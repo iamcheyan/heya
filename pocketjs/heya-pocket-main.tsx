@@ -4,6 +4,8 @@ import { BTN, getFocused, pushFocusScope, focusNode } from "@pocketjs/framework/
 import type { NodeMirror } from "@pocketjs/framework/solid/renderer";
 import { onButtonPress } from "@pocketjs/framework/solid/lifecycle";
 import { spring } from "@pocketjs/framework/animation";
+import { after } from "@pocketjs/framework/clock";
+import { onFrame } from "@pocketjs/framework/lifecycle";
 import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import { toPocketCards, type HeYaApp, type PocketCard } from "./heya-registry";
 import { pollBridgeEvents, sendBridgeCommand, type BridgeStatus } from "./heya-bridge";
@@ -32,7 +34,7 @@ function App() {
   let eventCursor = 0;
   let refreshing = false;
   let polling = false;
-  let timer = 0;
+  let tick = 0;
   let menuRoot: NodeMirror | undefined;
   let previousFocus: NodeMirror | undefined;
   let cardNodes: Array<{ id: number } | undefined> = [];
@@ -79,7 +81,7 @@ function App() {
   };
   const move = (delta: number) => {
     setIndex((current) => (current + delta + apps().length) % apps().length);
-    requestAnimationFrame(() => {
+    after(0, () => {
       const node = cardNodes[index()];
       if (node) {
         const focused = getFocused();
@@ -110,7 +112,7 @@ function App() {
   onMount(() => {
     void rescan();
     void refreshStatus().then(pollEvents).catch(() => setMessage("heya bridge unavailable"));
-    timer = window.setInterval(() => void pollEvents(), 1_000);
+    onFrame(() => { if (++tick % 60 === 0) void pollEvents(); });
     onButtonPress(BTN.LEFT, () => move(-1));
     onButtonPress(BTN.RIGHT, () => move(1));
     onButtonPress(BTN.CROSS, () => void launch());
@@ -118,7 +120,7 @@ function App() {
     onButtonPress(BTN.SQUARE, () => setMenuOpen((value) => !value));
     onButtonPress(BTN.CIRCLE, () => setMenuOpen(false));
   });
-  onCleanup(() => window.clearInterval(timer));
+  onCleanup(() => { tick = 0; });
   const offset = (i: number) => { let d = i - index(); const n = apps().length; if (d > n / 2) d -= n; if (d < -n / 2) d += n; return d; };
   return (
     <View class="flex-col w-full h-full bg-slate-950 p-3">
