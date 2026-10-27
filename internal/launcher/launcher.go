@@ -225,10 +225,7 @@ func (l *Launcher) systemRows() []ui.Row {
 // Services shortcut when the image ships a service table.
 func (l *Launcher) systemRowsView() []ui.Row {
 	rows := l.systemRows()
-	if l.probe == nil {
-		return rows
-	}
-	if _, err := l.probe.Services(); err != nil {
+	if l.probe == nil || !l.probe.HasServices() {
 		return rows
 	}
 	return append(rows, ui.Row{Label: "Services", Value: "›"})

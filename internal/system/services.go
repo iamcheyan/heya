@@ -25,6 +25,15 @@ var (
 	errNoServiceTable = errors.New("service table is missing")
 )
 
+// HasServices checks if the service table exists without querying service states.
+func (p *Probe) HasServices() bool {
+	if p == nil {
+		return false
+	}
+	_, err := os.Stat(p.path(ServiceListPath))
+	return err == nil
+}
+
 // Services reads the label table, then asks rocknix-services for each state.
 func (p *Probe) Services() ([]Service, error) {
 	file, err := os.Open(p.path(ServiceListPath))
