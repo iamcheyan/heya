@@ -40,6 +40,20 @@
 - 截图证据：`xwd -root` 捕获 X root，转 PNG 压缩至 100,541 bytes（`pocketjs/screenshots/linux-native-hero.png`）。像素校验：800×500 中 348,100/400,000（87%）非黑像素，确有渲染内容，非空白。
 - 输入实测：后台启动 host，用 `xdotool` 向标题为 `PocketJS: Hero` 的窗口发送 `Right Right Down space`，再发 `ctrl+q`。进程在 `ctrl+q` 后退出（`exited after ctrl+q (input received)`），证明 native host 接收并处理键盘输入（winit KeyboardInput → button_for → BTN）。
 
+## heya Guest 自身 native 运行时（720×480，目标设备分辨率）
+
+- 构建：`bun tools/pocket.ts build --target linux-app --pocket dist/heya-pocket-linux.pocket --out dist/linux-heya`（release profile，7m40s）。
+- 产物：`dist/linux-heya/program/` 含 `pocket-desktop-host`（20,595,256 bytes）、`heya-pocket-main.js`（202,872）、`heya-pocket-main.pak`（306,176）、`app.pocket`、`app.plan.json` 与 `run`。
+- `run` 脚本：`./pocket-desktop-host --app heya-pocket-main --js ... --pak ... --viewport 720x480 --density 1 --title 'heya PocketJS Prototype' --fixed`（720×480 即 RG34XX 目标分辨率）。
+- 运行（先启动 Go bridge sidecar 于 127.0.0.1:8132）：
+  ```
+  DISPLAY=:20 ./pocket-desktop-host ... --announce-ready --quit-after 120
+  → READY 1793076092924
+  EXIT=0
+  ```
+- 截图证据：`pocketjs/screenshots/linux-native-heya.png`（127,143 bytes；900×563 中 440,326/506,700 ≈ 87% 非黑像素，确有渲染内容）。
+- 结论：**heya Guest 的 Linux 原生路径完全打通**——从编译（`linux-app`）到打包（`.pocket`）到原生二进制运行（720×480，X11/Vulkan-llvmpipe），无需浏览器。这直接回答任务书"Linux Native?"为**已验证可行**。
+
 ## 结论
 
 - PocketJS 0.15.0 的 Linux native 路径**可用**：`linux-app` profile、desktop host（wgpu/winit）、打包与运行全部打通；本机以 Vulkan/llvmpipe 软件渲染运行，无需浏览器。
