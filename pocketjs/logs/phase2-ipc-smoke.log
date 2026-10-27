@@ -1,0 +1,35 @@
+Phase 2 Go ↔ PocketJS IPC evidence
+==================================
+
+Go build environment: ROCKNIX build container image (Go 1.23.1)
+Guest: PocketJS 0.15.0 official browser/WASM host, 480x272 framebuffer
+Test app: temporary valid Registry manifest id=alpha, exec=/usr/bin/true
+
+1. Sidecar lifecycle smoke
+Command: HEYA_BRIDGE_BIN=/tmp/heya-bridge pocketjs/tools/bridge/smoke.sh
+Observed:
+- launch id=1 returned 200, echoed id, status.running=true, app_id=sleeper, pid set.
+- second launch returned 409, echoed id=2.
+- get_status id=3 returned running=true.
+- app exited normally after environment assertion and 0.4s sleep.
+- get_status id=4 returned running=false.
+- events since cursor 0: app_started, status_changed, app_exited, status_changed (ordered).
+- rescan id=5 returned sleeper; events after prior cursor: registry_updated.
+- launch unknown app returned 404.
+Output: launch -> running status -> app_exited -> stopped status -> rescan; IDs and ordered events verified
+
+2. Browser Guest lifecycle + rescan smoke
+Command: POCKETJS_ROOT=<PocketJS 0.15.0 checkout> CHROME_PATH=<Chromium> HEYA_REGISTRY_SCANNER=/tmp/dump-apps HEYA_BRIDGE_BIN=/tmp/heya-bridge pocketjs/tools/dev-bridge/ui-smoke.sh
+Observed:
+- Guest startup rescan response apps=[alpha].
+- PocketJS host keyboard X caused the Guest launch command for alpha; bridge response contained running status and PID.
+- Guest received app_started and app_exited events; Canvas returned to HEYA READY and message "alpha exited · returned to heya".
+- get_status after exit returned running=false.
+- Adding beta produced IDs alpha,beta and a changed canvas; deleting alpha produced beta and another canvas change.
+- no browser page errors.
+Output: UI launch -> app_started/app_exited -> returned; get_status; rescan alpha -> alpha,beta -> beta; no page errors
+Screenshot: ../screenshots/bridge-launch-return.png
+
+Contract limits observed in implementation:
+- Sidecar is a separate Registry scanner + process owner; existing cmd/heya event loop and internal/launcher are unchanged and are not called.
+- Browser proxy and host URL injection are local modifications in the external PocketJS source checkout, not upstream APIs.

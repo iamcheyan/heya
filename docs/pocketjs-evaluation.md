@@ -34,44 +34,45 @@ Held-key pixel hashes showed every control path changing the canvas: `ArrowRight
 
 ## Registry data and live synchronization
 
-Status: verified for the browser-host prototype. `pocketjs/tools/dump-apps` now exposes a reusable scan function and serializes `internal/registry.Registry.Scan()` output. `pocketjs/tools/dev-bridge/server.ts` invokes that scanner on every `/heya/registry` request. The optional route is loaded by the PocketJS 0.15.0 development server through `HEYA_REGISTRY_BRIDGE`; the host supplies the current-origin endpoint as `__heyaRegistryUrl` before guest boot. The Guest fetches the JSON on startup and from Quick Menu → Rescan applications, then replaces the visible card list.
+Status: Registry synchronization and the Go sidecar lifecycle IPC are verified against the PocketJS 0.15.0 browser host. The Guest loads Registry results through `/cmd rescan` at startup and from Quick Menu, then replaces the visible card list. The sidecar resolves IDs via `internal/registry.Registry.Scan()` and launches only matching manifests.
 
 ```mermaid
 flowchart LR
   M[app.json files] --> R[internal/registry.Registry.Scan]
-  R --> D[pocketjs/tools/dump-apps JSON]
-  D --> B[optional PocketJS dev route /heya/registry]
-  B -->|net.fetch| G[PocketJS Guest card signal]
+  R --> B[Go bridge: rescan / launch / get_status]
+  B -->|same-origin JSON + events| G[PocketJS Guest]
   G --> U[480×272 canvas]
+  G -->|launch by app_id| B
+  B --> A[managed child process]
+  A -->|app_exited| G
 ```
 
-Evidence: the dumper compiled in the ROCKNIX build container with Go 1.23.1 and scanned `examples/apps` as `clock, hello`; it scanned `examples/font-samples` as six apps including CJK names. The standalone Registry add/remove smoke produced `alpha`, then `alpha,beta`, then `beta`. The Playwright browser-host UI smoke repeated the same sequence against a temporary app directory: the canvas changed after each update, and no page errors occurred. Screenshots: [`registry-ui-alpha.png`](../pocketjs/screenshots/registry-ui-alpha.png), [`registry-ui-alpha-beta.png`](../pocketjs/screenshots/registry-ui-alpha-beta.png), [`registry-ui-beta.png`](../pocketjs/screenshots/registry-ui-beta.png).
+The browser host uses an optional `/heya/bridge/*` reverse proxy; the Guest uses PocketJS `net.fetch` for `/cmd` and `/events?since=N`. For phase 1 add/remove proof and phase 2 launch/exit proof, see [`pocketjs-registry-bridge.md`](pocketjs-registry-bridge.md) and [`pocketjs-ipc.md`](pocketjs-ipc.md).
 
-Risks: the HTTP route is an optional development-host extension outside this heya repository and is not stock PocketJS runtime functionality. This verifies a browser localhost JSON bridge, not the eventual native IPC contract. The default scanner path uses `go run` per request and adds compilation latency; `HEYA_REGISTRY_SCANNER` supports a precompiled binary for measurements. Registry scan errors return HTTP 500 and leave the currently rendered list intact. Empty registries are rejected by the guest to avoid replacing a usable list with a blank screen. The generated TypeScript fixture remains only as startup data if no bridge is configured.
+Evidence: the dumper built in the ROCKNIX build image (Go 1.23.1), scanned `examples/apps` as `clock, hello` and scanned six CJK font-review apps. The Browser UI smoke checks live Registry IDs and canvas change on `alpha → alpha,beta → beta`. The IPC browser smoke invoked Guest `launch()` for a temporary `/usr/bin/true` application, observed `app_started`/`app_exited`, queried stopped status and rescanned the changing app directory. Protocol details and limitations are in [`pocketjs-ipc.md`](pocketjs-ipc.md); phase 1 screenshots remain under [`../pocketjs/screenshots/`](../pocketjs/screenshots/).
 
-### Original CPR69 fixture evidence
+Risk / limit: Go IPC is a separate sidecar that reuses the Registry and owns a child process. `cmd/heya` and `internal/launcher` were deliberately unchanged; this proves the PocketJS ↔ sidecar JSON/lifecycle boundary, not in-process integration with the existing SDL Launcher. Browser proxy and `__heyaBridgeUrl` injection are local validation-host edits in the external PocketJS checkout. Event history is in-memory, limited to 256 entries, and resets on sidecar restart. No production network/auth surface is enabled; sidecar defaults to loopback.
 
-`pocketjs/src/apps.generated.ts` remains generated scanner output used as initial fallback data; it is not live Registry synchronization. See the preceding implementation record and build details.
+The generated TypeScript fixture remains build-time fallback only; live application lists and actions use the runtime Go sidecar when configured.
 
 ## What the experiment says
 
-- PocketJS offers reusable Solid components, native focus traversal, compiled focus variants and motion APIs; layout composition is concise once the guest fits PocketJS's fixed utility/style contract.
-- The 480×272 stock browser-host screen can render this interface. The target device is 720×480, so this does not establish target resolution behavior, ARM64 performance, a Linux host backend or ROCKNIX integration.
-- PocketJS's documented Linux profile does not currently provide the complete stock backend needed to ship a Linux/ROCKNIX app. The production migration boundary would need PocketJS embedded as a native Linux UI, a JSON/status IPC contract to the existing Go code, and a real heya launch/return bridge.
-- The prototype shows the visual/interaction direction and consumes real heya Registry output, but does not execute apps.
+- PocketJS browser host renders the Guest at 480×272 and exposes Solid focus components, focus scopes, style variants and motion. Phases 4 and 5 still determine controller and i18n completeness.
+- Registry data and child-process lifecycle work through a separate Go JSON sidecar in the browser-host experiment. The existing SDL `cmd/heya` event loop and `internal/launcher.Launcher` are unchanged and do not consume this sidecar protocol.
+- The target display is 720×480. The browser experiment and sidecar lifecycle do not establish the official PocketJS Linux native renderer, ARM64 frame time, RSS/CPU acceptability, or ROCKNIX deployment readiness.
+- The official browser host serves the UI and routes same-origin requests to a Go sidecar. Its local PocketJS host modifications are not upstream PocketJS or shipping integration.
 
-## Recommendation
+## Recommendation (current evidence)
 
-Keep the SDL2 frontend for RG34XX. PocketJS is promising as a component/focus/animation model, but the runtime experiment does not establish that it is ready to replace SDL2 on ROCKNIX. Revisit after a native Linux host/backend and a small Go bridge are demonstrated against the existing Launcher, Registry and System interfaces.
+Keep SDL2 for RG34XX while PocketJS remains a parallel experiment. The Registry and sidecar contracts work in the browser host, but there is no in-process Launcher integration and no Linux/ARM64/device proof. Re-evaluate after phases 3, 6, 7 and 8 provide direct runtime evidence. Final A/B/C/D recommendation belongs in `docs/cpr69-final-report.md` after all nine stages.
 
 ## Remaining before closing issue 69
 
-- Replace mock cards with real Registry data through a documented bridge or fixture generated by the existing scanner.
-- Connect launch, return, rescan and status requests to the current Go Launcher/System without modifying their core logic.
-- Verify the carousel focus and spring interaction with the official browser-host input path and capture arrow/cross/square/triangle behavior.
-- Design and build the native Linux/SDL2 host boundary; measure RAM and frame rate on ARM64.
-- Test at 720×480 and then on RG34XX/ROCKNIX; save maintained screenshots only if they are intended project assets.
-- Update the evaluation report from actual host/device evidence, then comment on and close CPR69 after all criteria are met.
+- Verify the PocketJS Linux native host path from 0.15.0 source, including render and input without a browser.
+- Complete controller, focus, menu, internationalization and font-load-failure checks with evidence.
+- Measure PocketJS and SDL2 resource/frame behavior; then run an ARM64 target/container stability observation.
+- Assess the sidecar boundary against the existing Launcher without changing core behavior and verify the minimal launch/return/rescan/status loop.
+- Produce the nine-stage final report; close CPR69 only after every stage has an evidence-based disposition.
 
 ## Sources
 

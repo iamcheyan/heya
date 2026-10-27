@@ -35,10 +35,10 @@ They are not PocketJS runtime evidence. The guest uses PocketJS's fixed set of s
 
 ## heya integration boundary
 
-- The browser prototype's `/heya/registry` endpoint runs `pocketjs/tools/dump-apps` on every request. It scans the configured app directory through `internal/registry.Registry.Scan()` and returns current visible apps as JSON.
-- `src/apps.generated.ts` remains the startup fallback if the runtime endpoint is unavailable; the menu's Rescan action replaces the cards with the latest Registry response.
-- Run the isolated browser bridge with `HEYA_ROOT=/absolute/path/to/heya HEYA_APPS=/absolute/path/to/apps PORT=8130 bun tools/dev/web/serve.ts` from the PocketJS 0.15.0 checkout after adding the route documented in this CPR72 branch. The route is prototype-only and is not part of PocketJS upstream.
-- The guest does not start real heya apps. Launch/return behavior, status IPC, native host integration, performance measurement, and RG34XX verification remain open.
+The `HEYA_REGISTRY_BRIDGE` route handles the browser prototype's `/heya/registry` through `pocketjs/tools/dump-apps`, scanning current visible apps on every request. The Guest also sends `launch(app_id)`, `rescan()` and `get_status()` through the JSON IPC sidecar and polls `app_started`, `app_exited`, `registry_updated`, `status_changed` events. The sidecar launches only apps found by heya Registry.
+- The optional Go sidecar is `pocketjs/tools/bridge`; it preserves the existing Launcher/Registry/System packages and owns its own child-process lifecycle. It does not drive the current SDL `cmd/heya` event loop or call Launcher APIs, so this verifies the bridge contract but not in-process Launcher integration. See [`../docs/pocketjs-ipc.md`](../docs/pocketjs-ipc.md).
+- Browser `/heya/bridge/*` proxy and the PocketJS `engine.js` `__heyaBridgeUrl` injection are local validation-host edits outside this repo. They are prototype-only, not upstream PocketJS functionality.
+- Linux native host, integration with the production Launcher process, target-device performance, and RG34XX verification remain open.
 
 Regenerate the checked-in fallback fixture from this checkout:
 

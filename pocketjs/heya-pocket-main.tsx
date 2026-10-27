@@ -4,12 +4,12 @@ import { BTN, getFocused, pushFocusScope, focusNode } from "@pocketjs/framework/
 import type { NodeMirror } from "@pocketjs/framework/solid/renderer";
 import { onButtonPress } from "@pocketjs/framework/solid/lifecycle";
 import { spring } from "@pocketjs/framework/animation";
-import { fetch } from "@pocketjs/framework/net";
 import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import { toPocketCards, type HeYaApp, type PocketCard } from "./heya-registry";
+import { pollBridgeEvents, sendBridgeCommand, type BridgeStatus } from "./heya-bridge";
 import { scannedApps } from "./apps.generated";
 
-const registryUrl = (globalThis as typeof globalThis & { __heyaRegistryUrl?: string }).__heyaRegistryUrl ?? "http://127.0.0.1:8130/heya/registry";
+const bridgeUrl = (globalThis as typeof globalThis & { __heyaBridgeUrl?: string }).__heyaBridgeUrl ?? "http://127.0.0.1:8132";
 
 type ScannedApp = (typeof scannedApps)[number];
 type App = PocketCard & { glyph: string };
@@ -27,7 +27,11 @@ function App() {
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [clock, setClock] = createSignal("09:41");
   const [message, setMessage] = createSignal("A quiet place for the things you use every day");
+  const [runtime, setRuntime] = createSignal<BridgeStatus>({ running: false });
+  let requestId = 0;
+  let eventCursor = 0;
   let refreshing = false;
+  let polling = false;
   let timer = 0;
   let menuRoot: NodeMirror | undefined;
   let previousFocus: NodeMirror | undefined;
@@ -36,9 +40,8 @@ function App() {
     if (refreshing) return;
     refreshing = true;
     try {
-      const response = await fetch(registryUrl, { maxBytes: 256 * 1024 });
-      if (!response.ok) throw new Error(`Registry returned HTTP ${response.status}`);
-      const next = toApps(await response.json() as ScannedApp[]);
+      const result = await sendBridgeCommand<ScannedApp[]>(bridgeUrl, "rescan", ++requestId);
+      const next = toApps(result.apps ?? []);
       if (!next.length) throw new Error("Registry returned no visible applications");
       setApps(next);
       setIndex((current) => Math.min(current, next.length - 1));
@@ -47,6 +50,31 @@ function App() {
       setMessage(`Registry refresh failed · ${String(error)}`);
     } finally {
       refreshing = false;
+    }
+  };
+  const refreshStatus = async () => {
+    const result = await sendBridgeCommand(bridgeUrl, "get_status", ++requestId);
+    if (result.status) setRuntime(result.status);
+  };
+  const pollEvents = async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      const batch = await pollBridgeEvents(bridgeUrl, eventCursor);
+      eventCursor = batch.next;
+      for (const event of batch.events) {
+        if (event.type === "app_started") {
+          setRuntime({ running: true, app_id: event.app_id, pid: event.pid });
+          setMessage(`${event.app_id ?? "Application"} started · waiting for exit`);
+        } else if (event.type === "app_exited") {
+          setRuntime({ running: false });
+          setMessage(`${event.app_id ?? "Application"} exited · returned to heya`);
+        }
+      }
+    } catch {
+      try { await refreshStatus(); } catch { setMessage("heya bridge unavailable"); }
+    } finally {
+      polling = false;
     }
   };
   const move = (delta: number) => {
@@ -60,7 +88,17 @@ function App() {
     });
   };
   const active = () => apps()[index()];
-  const launch = () => setMessage(`${active().name} is ready · connected to heya Launcher in the integration phase`);
+  const launch = async () => {
+    if (runtime().running) return setMessage(`${runtime().app_id ?? "Application"} is already running`);
+    try {
+      const result = await sendBridgeCommand(bridgeUrl, "launch", ++requestId, active().id);
+      if (result.status) setRuntime(result.status);
+      setMessage(`${active().name} launched`);
+      void pollEvents();
+    } catch (error) {
+      setMessage(`Launch failed · ${String(error)}`);
+    }
+  };
   const toggleFavorite = () => { const next = !favorite(); setFavorite(next); setMessage(`${active().name} ${next ? "added to" : "removed from"} favorites`); };
   createEffect(() => {
     if (menuOpen() && menuRoot) {
@@ -71,9 +109,11 @@ function App() {
   });
   onMount(() => {
     void rescan();
+    void refreshStatus().then(pollEvents).catch(() => setMessage("heya bridge unavailable"));
+    timer = window.setInterval(() => void pollEvents(), 1_000);
     onButtonPress(BTN.LEFT, () => move(-1));
     onButtonPress(BTN.RIGHT, () => move(1));
-    onButtonPress(BTN.CROSS, launch);
+    onButtonPress(BTN.CROSS, () => void launch());
     onButtonPress(BTN.TRIANGLE, toggleFavorite);
     onButtonPress(BTN.SQUARE, () => setMenuOpen((value) => !value));
     onButtonPress(BTN.CIRCLE, () => setMenuOpen(false));
@@ -84,7 +124,7 @@ function App() {
     <View class="flex-col w-full h-full bg-slate-950 p-3">
       <View class="flex-row h-10 items-center justify-between">
         <View class="text-xl text-white font-bold">heya.</View>
-        <View class="flex-row gap-4 text-sm text-slate-300"><View>Wi-Fi</View><View>Battery</View><View>{clock()}</View></View>
+        <View class="flex-row gap-4 text-sm text-slate-300"><View>{runtime().running ? `RUNNING ${runtime().app_id}` : "HEYA READY"}</View><View>Wi-Fi</View><View>Battery</View><View>{clock()}</View></View>
       </View>
       <View class="flex-row h-8 items-center justify-between text-xs text-slate-400"><View>YOUR POCKET, IN FLOW</View><View>{String(index() + 1).padStart(2, "0")} / {apps().length}</View></View>
       <View class="flex-1 flex-row items-center justify-center gap-2">
