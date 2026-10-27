@@ -66,6 +66,34 @@ func TestScrollOffsetUsesTheRenderedRowCount(t *testing.T) {
 	}
 }
 
+func TestUnknownApplicationIconKeepsTheIconColumn(t *testing.T) {
+	l := New(model.Page{Title: "Applications", Items: []model.Item{
+		{Name: "File Manager", Exec: "/usr/bin/commander", Icon: "unknown"},
+	}}, nil, model.Icons{"nf-md-application": "F0614"})
+	if got := l.Frame().Rows[0].Icon; got != '\U000F0614' {
+		t.Fatalf("unknown application icon = %U", got)
+	}
+}
+
+func TestLongToolListScrollsToLastAndWraps(t *testing.T) {
+	page := model.Page{Title: "Applications"}
+	for i := 0; i < 25; i++ {
+		page.Items = append(page.Items, model.Item{Name: "Tool", Exec: "/bin/true"})
+	}
+	l := New(page, nil, nil)
+	l.SetVisibleRows(5)
+	for i := 0; i < 24; i++ {
+		l.Handle(input.Down)
+	}
+	if f := l.Frame(); f.Selected != 24 || f.Offset != 20 {
+		t.Fatalf("last tool not visible: %+v", f)
+	}
+	l.Handle(input.Down)
+	if f := l.Frame(); f.Selected != 0 || f.Offset != 0 {
+		t.Fatalf("wrapped list did not return to top: %+v", f)
+	}
+}
+
 func TestConfirmOnExecReturnsCommand(t *testing.T) {
 	l := testLauncher()
 	cmd := l.Handle(input.Confirm)

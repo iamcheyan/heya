@@ -15,5 +15,13 @@
   "nf-md-volume": "F057E",
   "nf-md-application": "F0614",
   "nf-md-camera": "F0100",
-  "nf-md-clock": "F0954"
+  "nf-md-clock": "F0954",
+  "nf-md-harddisk": "F02CA",
+  "nf-md-chart-line": "F012A",
+  "nf-md-memory": "F035B",
+  "nf-md-usb": "F0553",
+  "nf-md-file-document": "F0219",
+  "nf-md-cloud": "F015F",
+  "nf-md-backup-restore": "F006F",
+  "nf-md-broom": "F00E2"
 }

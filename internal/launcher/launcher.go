@@ -117,13 +117,16 @@ func (l *Launcher) rows(pageID string) []ui.Row {
 }
 
 func (l *Launcher) glyph(name string) rune {
-	if name == "" || l.icons == nil {
+	if name == "" {
 		return 0
 	}
 	if glyph := l.icons.Glyph(name); glyph != 0 {
 		return glyph
 	}
-	return 0
+	if glyph := l.icons.Glyph("nf-md-application"); glyph != 0 {
+		return glyph
+	}
+	return '▪'
 }
 
 func pageHint(item model.Item) string {
