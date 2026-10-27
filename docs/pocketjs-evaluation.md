@@ -32,16 +32,26 @@ The host chrome displays an emulator keyboard map. In that map, arrows are D-pad
 
 Held-key pixel hashes showed every control path changing the canvas: `ArrowRight` 589839760→410683622, `KeyX`→3916112886, `KeyS`→160249272, `KeyA`→2478779282, `Enter`→3471984398. Single-frame presses were dropped by the host's per-frame sampling, so the prototype uses held keys for control verification.
 
-## Registry data
+## Registry data and live synchronization
 
-`pocketjs/tools/dump-apps/main.go` scans heya's own `internal/registry` and emits JSON; `pocketjs/src/apps.generated.ts` is the generated fixture. A rebuild after changing example apps:
+Status: verified for the browser-host prototype. `pocketjs/tools/dump-apps` now exposes a reusable scan function and serializes `internal/registry.Registry.Scan()` output. `pocketjs/tools/dev-bridge/server.ts` invokes that scanner on every `/heya/registry` request. The optional route is loaded by the PocketJS 0.15.0 development server through `HEYA_REGISTRY_BRIDGE`; the host supplies the current-origin endpoint as `__heyaRegistryUrl` before guest boot. The Guest fetches the JSON on startup and from Quick Menu → Rescan applications, then replaces the visible card list.
 
-```sh
-cd ~/development/heya-pocketjs-prototype
-go run ./pocketjs/tools/dump-apps -dir examples/font-samples > pocketjs/src/apps.generated.ts
+```mermaid
+flowchart LR
+  M[app.json files] --> R[internal/registry.Registry.Scan]
+  R --> D[pocketjs/tools/dump-apps JSON]
+  D --> B[optional PocketJS dev route /heya/registry]
+  B -->|net.fetch| G[PocketJS Guest card signal]
+  G --> U[480×272 canvas]
 ```
 
-The guest currently renders six apps from `examples/font-samples`, including CJK names such as `你好世界 Hello` and `日本語テスト Hello`. The Noto Sans CJK fallback face is declared in `apps/heya-pocket/fonts.json`; CJK glyphs render as real characters rather than tofu boxes.
+Evidence: the dumper compiled in the ROCKNIX build container with Go 1.23.1 and scanned `examples/apps` as `clock, hello`; it scanned `examples/font-samples` as six apps including CJK names. The standalone Registry add/remove smoke produced `alpha`, then `alpha,beta`, then `beta`. The Playwright browser-host UI smoke repeated the same sequence against a temporary app directory: the canvas changed after each update, and no page errors occurred. Screenshots: [`registry-ui-alpha.png`](../pocketjs/screenshots/registry-ui-alpha.png), [`registry-ui-alpha-beta.png`](../pocketjs/screenshots/registry-ui-alpha-beta.png), [`registry-ui-beta.png`](../pocketjs/screenshots/registry-ui-beta.png).
+
+Risks: the HTTP route is an optional development-host extension outside this heya repository and is not stock PocketJS runtime functionality. This verifies a browser localhost JSON bridge, not the eventual native IPC contract. The default scanner path uses `go run` per request and adds compilation latency; `HEYA_REGISTRY_SCANNER` supports a precompiled binary for measurements. Registry scan errors return HTTP 500 and leave the currently rendered list intact. Empty registries are rejected by the guest to avoid replacing a usable list with a blank screen. The generated TypeScript fixture remains only as startup data if no bridge is configured.
+
+### Original CPR69 fixture evidence
+
+`pocketjs/src/apps.generated.ts` remains generated scanner output used as initial fallback data; it is not live Registry synchronization. See the preceding implementation record and build details.
 
 ## What the experiment says
 

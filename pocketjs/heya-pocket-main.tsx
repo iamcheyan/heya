@@ -4,32 +4,51 @@ import { BTN, getFocused, pushFocusScope, focusNode } from "@pocketjs/framework/
 import type { NodeMirror } from "@pocketjs/framework/solid/renderer";
 import { onButtonPress } from "@pocketjs/framework/solid/lifecycle";
 import { spring } from "@pocketjs/framework/animation";
+import { fetch } from "@pocketjs/framework/net";
 import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
+import { toPocketCards, type HeYaApp, type PocketCard } from "./heya-registry";
 import { scannedApps } from "./apps.generated";
 
-// Real output of heya's own scanner (internal/registry), dumped by
-// pocketjs/tools/dump-apps. Regenerate after changing example apps:
-//   go run ./pocketjs/tools/dump-apps -dir examples/font-samples > pocketjs/src/apps.generated.json
-const scanned = scannedApps;
-const demoApps = scanned.map((card, index) => ({
+const registryUrl = (globalThis as typeof globalThis & { __heyaRegistryUrl?: string }).__heyaRegistryUrl ?? "http://127.0.0.1:8130/heya/registry";
+
+type ScannedApp = (typeof scannedApps)[number];
+type App = PocketCard & { glyph: string };
+const toApps = (records: HeYaApp[]): App[] => toPocketCards(records).map((card) => ({
   ...card,
-  category: (card.category || "apps").toUpperCase(),
+  category: card.category.toUpperCase(),
   subtitle: card.subtitle || "Discovered by the heya registry",
   glyph: card.name.trim().slice(0, 1).toUpperCase(),
-  initialIndex: index,
 }));
-type App = (typeof demoApps)[number];
+const demoApps = toApps(scannedApps as ScannedApp[]);
 function App() {
-  const [apps] = createSignal(demoApps);
+  const [apps, setApps] = createSignal(demoApps);
   const [index, setIndex] = createSignal(demoApps.length > 1 ? 1 : 0);
   const [favorite, setFavorite] = createSignal(false);
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [clock, setClock] = createSignal("09:41");
   const [message, setMessage] = createSignal("A quiet place for the things you use every day");
+  let refreshing = false;
   let timer = 0;
   let menuRoot: NodeMirror | undefined;
   let previousFocus: NodeMirror | undefined;
   let cardNodes: Array<{ id: number } | undefined> = [];
+  const rescan = async () => {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const response = await fetch(registryUrl, { maxBytes: 256 * 1024 });
+      if (!response.ok) throw new Error(`Registry returned HTTP ${response.status}`);
+      const next = toApps(await response.json() as ScannedApp[]);
+      if (!next.length) throw new Error("Registry returned no visible applications");
+      setApps(next);
+      setIndex((current) => Math.min(current, next.length - 1));
+      setMessage(`Registry refreshed · ${next.length} applications`);
+    } catch (error) {
+      setMessage(`Registry refresh failed · ${String(error)}`);
+    } finally {
+      refreshing = false;
+    }
+  };
   const move = (delta: number) => {
     setIndex((current) => (current + delta + apps().length) % apps().length);
     requestAnimationFrame(() => {
@@ -51,7 +70,7 @@ function App() {
     }
   });
   onMount(() => {
-    timer = window.setInterval(() => setClock(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })), 30_000);
+    void rescan();
     onButtonPress(BTN.LEFT, () => move(-1));
     onButtonPress(BTN.RIGHT, () => move(1));
     onButtonPress(BTN.CROSS, launch);
@@ -84,7 +103,7 @@ function App() {
         <View>{message()}</View>
         <View class="flex-row items-center justify-between gap-1"><Focusable class="rounded-md bg-slate-800 px-1 py-1" onPress={launch}><View>A Open</View></Focusable><Focusable class="rounded-md bg-slate-800 px-1 py-1" onPress={() => setMenuOpen(false)}><View>B Back</View></Focusable><Focusable class="rounded-md bg-slate-800 px-1 py-1" onPress={() => setMenuOpen((v) => !v)}><View>X Menu</View></Focusable><Focusable class="rounded-md bg-slate-800 px-1 py-1" onPress={toggleFavorite}><View>Y {favorite() ? "Saved" : "Favorite"}</View></Focusable></View>
       </View>
-      {menuOpen() && <View class="absolute right-4 bottom-16 w-[260] flex-col gap-3 p-4 rounded-xl border border-slate-600 bg-slate-800" ref={(node) => { menuRoot = node; }}><View class="text-sm text-white font-bold">QUICK MENU</View><Focusable onPress={toggleFavorite}><View class="text-sm text-white">☆ {favorite() ? "Remove favorite" : "Add to favorites"}</View></Focusable><Focusable onPress={() => { setMessage("Rescan requested · Registry connection pending"); setMenuOpen(false); }}><View class="text-sm text-white">↻ Rescan applications</View></Focusable></View>}
+      {menuOpen() && <View class="absolute right-4 bottom-16 w-[260] flex-col gap-3 p-4 rounded-xl border border-slate-600 bg-slate-800" ref={(node) => { menuRoot = node; }}><View class="text-sm text-white font-bold">QUICK MENU</View><Focusable onPress={toggleFavorite}><View class="text-sm text-white">☆ {favorite() ? "Remove favorite" : "Add to favorites"}</View></Focusable><Focusable onPress={() => { void rescan(); setMenuOpen(false); }}><View class="text-sm text-white">↻ Rescan applications</View></Focusable></View>}
     </View>
   );
 }
