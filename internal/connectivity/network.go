@@ -347,6 +347,12 @@ func (c Client) ConnectWiFi(ctx context.Context, ap AccessPoint, password string
 				}
 				// Keep profile identity and unrelated device options when replacing a key.
 				existing.settings["802-11-wireless-security"] = update["802-11-wireless-security"]
+				for _, section := range []string{"ipv4", "ipv6"} {
+					if m, ok := existing.settings[section]; ok {
+						delete(m, "addresses")
+						delete(m, "routes")
+					}
+				}
 				if _, err = b.Call(ctx, nm, existing.path, settingsInterface+".Update", existing.settings); err != nil {
 					return err
 				}

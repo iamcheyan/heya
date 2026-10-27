@@ -142,3 +142,57 @@ func TestProfilesWithSameSSIDKeepSecuritySeparate(t *testing.T) {
 		}
 	}
 }
+
+func TestConnectUpdatesExistingProfileCleansLegacyIP(t *testing.T) {
+	ap := AccessPoint{SSID: "test:ssid", Security: "WPA/WPA2", Path: "/ap", Device: "/wlan"}
+	settings, err := wifiSettings(ap, "oldpassword")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings["ipv6"]["addresses"] = dbus.MakeVariant([][]byte{{0xfe, 0x80}})
+	settings["ipv6"]["routes"] = dbus.MakeVariant([]string{"default"})
+	settings["ipv4"]["addresses"] = dbus.MakeVariant([]uint32{0x01020304})
+	settings["ipv4"]["routes"] = dbus.MakeVariant([]string{"default"})
+
+	updated := false
+	c := Client{Bus: fakeBus{call: func(ctx context.Context, d string, p dbus.ObjectPath, m string, a ...interface{}) ([]interface{}, error) {
+		switch m {
+		case nm + ".Settings.ListConnections":
+			return []interface{}{[]dbus.ObjectPath{"/profile/1"}}, nil
+		case settingsInterface + ".GetSettings":
+			return []interface{}{settings}, nil
+		case settingsInterface + ".Update":
+			upSettings := a[0].(map[string]map[string]dbus.Variant)
+			if _, ok := upSettings["ipv6"]["addresses"]; ok {
+				t.Fatal("ipv6 addresses not cleaned")
+			}
+			if _, ok := upSettings["ipv6"]["routes"]; ok {
+				t.Fatal("ipv6 routes not cleaned")
+			}
+			if _, ok := upSettings["ipv4"]["addresses"]; ok {
+				t.Fatal("ipv4 addresses not cleaned")
+			}
+			if _, ok := upSettings["ipv4"]["routes"]; ok {
+				t.Fatal("ipv4 routes not cleaned")
+			}
+			if value[string](upSettings["802-11-wireless-security"], "psk") != "newpassword" {
+				t.Fatal("password not updated")
+			}
+			updated = true
+			return []interface{}{}, nil
+		case nm + ".ActivateConnection":
+			return []interface{}{dbus.ObjectPath("/active")}, nil
+		case "org.freedesktop.DBus.Properties.GetAll":
+			return []interface{}{map[string]dbus.Variant{"State": dbus.MakeVariant(uint32(2))}}, nil
+		default:
+			t.Fatalf("unexpected %s", m)
+			return nil, nil
+		}
+	}}}
+	if err := c.ConnectWiFi(context.Background(), ap, "newpassword"); err != nil {
+		t.Fatal(err)
+	}
+	if !updated {
+		t.Fatal("profile not updated")
+	}
+}
