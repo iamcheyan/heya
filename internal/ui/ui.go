@@ -593,21 +593,25 @@ func (u *UI) renderSystemProfile(frame Frame, px func(int32) int32) {
 	_ = u.ren.SetDrawColor(black.R, black.G, black.B, black.A)
 	_ = u.ren.Clear()
 	margin := px(28)
-	u.drawText("heya@rocknix:~$ system-profile", margin, px(18), green)
+	u.drawText("KoroOS / SYSTEM PROFILE", margin, px(18), green)
 	u.fill(sdl.Rect{X: margin, Y: px(54), W: u.Width - 2*margin, H: px(1)}, muted)
 
 	logo := []string{
-		"  _   _",
-		" | | | |",
-		" | |_| |",
-		" |  _  |",
-		" |_| |_|",
-		"   HEYA",
+		"      .---.",
+		"    .'     '.",
+		"   /    *    \\",
+		"  |   .---.   |",
+		"  |  (  *  )  |",
+		"  |   '---'   |",
+		"   \\         /",
+		"    '.     .'",
+		"      '---'",
 	}
-	logoY := px(150)
+	logoY := px(112)
 	for i, line := range logo {
-		u.drawText(line, margin, logoY+int32(i)*px(30), green)
+		u.drawText(line, margin, logoY+int32(i)*px(21), cyan)
 	}
+	u.drawText("KoroOS", margin+px(18), px(318), green)
 	u.drawText("SYSTEM", margin, px(365), cyan)
 	u.drawText("INFORMATION", margin, px(392), muted)
 
