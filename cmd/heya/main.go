@@ -126,6 +126,7 @@ func run(opts options) error {
 	}
 
 	l := launcher.New(rescan(), probe, icons)
+	status := l.Status()
 	l.SetConnectivity(connectivity.NewBackend())
 	defer l.Close()
 	l.AddPage("system", model.Page{Title: "System"})
@@ -134,6 +135,7 @@ func run(opts options) error {
 		host, _ = os.Hostname()
 	}
 	l.AddPage("about", aboutPage(opts, host))
+	l.AddPage("profile", systemProfilePage(opts, host, status))
 	l.Refresh = rescan
 
 	if opts.dumpDir != "" {
@@ -191,8 +193,103 @@ func aboutPage(opts options, host string) model.Page {
 			{Name: "Apps directory", Value: opts.appsDir},
 			{Name: "Display", Value: fmt.Sprintf("%dx%d", opts.width, opts.height)},
 			{Name: "Data root", Value: "/storage/heya"},
+			{Name: "System Profile", Icon: "nf-md-console", Page: "profile"},
 		},
 	}
+}
+
+func systemProfilePage(opts options, host string, status system.Status) model.Page {
+	if opts.dumpDir != "" {
+		return model.Page{Title: "System Profile", Items: []model.Item{
+			{Name: "OS", Value: "ROCKNIX (preview)"},
+			{Name: "Device", Value: demoHost},
+			{Name: "Kernel", Value: "Linux"},
+			{Name: "Architecture", Value: "aarch64"},
+			{Name: "Processor", Value: "ARM handheld"},
+			{Name: "Memory", Value: "8192 MB"},
+			{Name: "Storage", Value: "131072 / 262144 MB free"},
+			{Name: "Display", Value: fmt.Sprintf("%d x %d", opts.width, opts.height)},
+			{Name: "Battery", Value: "82%"},
+			{Name: "heya", Value: version},
+		}}
+	}
+	readTrimmed := func(path string) string {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(strings.TrimRight(string(data), "\x00"))
+	}
+	readOS := func() string {
+		data, err := os.ReadFile("/etc/os-release")
+		if err != nil {
+			return ""
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if value, ok := strings.CutPrefix(line, "PRETTY_NAME="); ok {
+				return strings.Trim(strings.TrimSpace(value), "\"")
+			}
+		}
+		return ""
+	}
+	readCPU := func() string {
+		data, err := os.ReadFile("/proc/cpuinfo")
+		if err != nil {
+			return ""
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			key, value, ok := strings.Cut(line, ":")
+			if ok && (strings.TrimSpace(key) == "Hardware" || strings.TrimSpace(key) == "Model name" || strings.TrimSpace(key) == "model name") {
+				return strings.TrimSpace(value)
+			}
+		}
+		return ""
+	}
+	unknown := func(value string) string {
+		if value == "" {
+			return "Unavailable"
+		}
+		return value
+	}
+	osName := readOS()
+	if osName == "" {
+		osName = os.Getenv("CFW_NAME")
+	}
+	if osName == "" {
+		osName = "ROCKNIX"
+	}
+	device := readTrimmed("/proc/device-tree/model")
+	if device == "" {
+		device = host
+	}
+	memory := "Unavailable"
+	if status.MemTotalMB > 0 {
+		memory = fmt.Sprintf("%d MB", status.MemTotalMB)
+	}
+	storage := "Unavailable"
+	if status.StorageKnown {
+		storage = fmt.Sprintf("%d / %d MB free", status.StorageFreeMB, status.StorageTotalMB)
+	}
+	battery := "Unavailable"
+	if status.BatteryKnown {
+		battery = fmt.Sprintf("%d%%", status.BatteryPercent)
+	}
+	kernel := status.Kernel
+	if kernel == "" {
+		kernel = "Unknown"
+	}
+	return model.Page{Title: "System Profile", Items: []model.Item{
+		{Name: "OS", Value: osName},
+		{Name: "Device", Value: unknown(device)},
+		{Name: "Kernel", Value: kernel},
+		{Name: "Architecture", Value: runtime.GOARCH},
+		{Name: "Processor", Value: unknown(readCPU())},
+		{Name: "Memory", Value: memory},
+		{Name: "Storage", Value: storage},
+		{Name: "Display", Value: fmt.Sprintf("%d x %d", opts.width, opts.height)},
+		{Name: "Battery", Value: battery},
+		{Name: "heya", Value: version},
+	}}
 }
 
 func loadConfig(opts options) (model.Theme, model.Icons, input.Mapping, error) {

@@ -613,17 +613,17 @@ func (u *UI) renderSystemProfile(frame Frame, px func(int32) int32) {
 
 	profileX := max(px(245), u.Width*39/100)
 	rowTop := px(91)
-	rowGap := px(34)
-	labelWidth := px(112)
+	rowGap := px(32)
+	labelWidth := px(140)
 	valueX := profileX + labelWidth
 	for i, row := range frame.Rows {
 		y := rowTop + int32(i)*rowGap
-		u.rowText(row.Label, sdl.Rect{X: profileX, Y: y, W: labelWidth - px(10), H: rowGap}, cyan, false, false)
-		u.rowText(row.Value, sdl.Rect{X: valueX, Y: y, W: u.Width - margin - valueX, H: rowGap}, softWhite, false, false)
+		u.textInBox(row.Label, sdl.Rect{X: profileX, Y: y, W: labelWidth - px(10), H: rowGap}, cyan, false)
+		u.textInBox(row.Value, sdl.Rect{X: valueX, Y: y, W: u.Width - margin - valueX, H: rowGap}, softWhite, false)
 	}
 	u.fill(sdl.Rect{X: margin, Y: u.Height - px(48), W: u.Width - 2*margin, H: px(1)}, muted)
 	u.drawText("[B] BACK", margin, u.Height-px(34), muted)
-	u.drawText("ROCKNIX HANDHELD", u.Width-margin-px(210), u.Height-px(34), muted)
+	u.textInBox("ROCKNIX HANDHELD", sdl.Rect{X: u.Width - margin - px(220), Y: u.Height - px(39), W: px(220), H: px(24)}, muted, false)
 	u.ren.Present()
 }
 
