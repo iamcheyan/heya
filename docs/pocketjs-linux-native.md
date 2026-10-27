@@ -1,6 +1,6 @@
 # CPR72 阶段3：PocketJS Linux Native Host 调查
 
-状态：部分验证。PocketJS 0.15.0 的 `linux-app` 目标与 desktop host 在本机可编译；heya Guest 已从浏览器全局 API 迁移到原生 API 并通过编译。native 运行时渲染/输入实测仍在进行。
+状态：**已验证**。PocketJS 0.15.0 的 `linux-app` 目标在本机可编译、可打包、可在 X11 下无浏览器渲染并接收键盘输入（官方 demo `hero` 实测通过）。heya Guest 已从浏览器全局 API 迁移到原生 API 并通过编译；heya 自身的 native 运行时仍在构建/验证中。
 
 ## 源码证据
 
@@ -18,6 +18,33 @@
 - heya Guest 首次编译 **失败**（真实阻塞）：`main.tsx:82 TS2304 Cannot find name 'requestAnimationFrame'`、`main.tsx:113/121 TS2304 Cannot find name 'window'`。根因：QuickJS native guest 无 `window`/`requestAnimationFrame`/真实 `setTimeout`；官方文档 `docs/DETERMINISM.md` 与 `framework/src/clock.ts` 指明 `after()` 是 `setTimeout` 的确定性替代（deadline 为帧索引）。
 - 修复后编译通过：Guest 的 `requestAnimationFrame` → `after(0, ...)`，`window.setInterval` → `onFrame(() => { if (++tick % 60 === 0) ... })`。产出 `dist/heya-pocket-linux.pocket`：pak 8 entries / 306,176 bytes，js 202,872 bytes，`ResolvedBuildPlan sha256:6dba049a9ecaf588c418aac59c1d1e9b62ac0eb1fa3e087cbb1ee40a0957894f`。
 - 结论：heya Guest 原先依赖浏览器全局 API，是其在 native 路径下的真实阻塞点；改用 PocketJS 原生 API 后 linux-app 编译路径打通。仍在验证 native 运行时（`pocket build` + `pocket-desktop-host`）能否在无浏览器下渲染并接收输入。
+
+## 渲染与输入实测（hero，官方 demo）
+
+- 启动 Xvfb 失败（`:99`/`:77` 未建 socket），改用既有可用 display `:20`（X.Org 21.1.16）。
+- 运行命令：
+  ```
+  DISPLAY=:20 ./pocket-desktop-host --app hero-main --js hero-main.js --pak hero-main.pak \
+    --viewport 640x360 --density 1 --title 'PocketJS: Hero' --announce-ready --quit-after 120
+  ```
+- 输出：
+  ```
+  [WARN  wgpu_hal::vulkan::instance] Unable to find extension: VK_EXT_physical_device_drm
+  [INFO  wgpu_hal::gles::egl] Using X11 platform
+  [INFO  pocket3d::gpu] adapter: "llvmpipe (LLVM 19.1.7, 256 bits)" (Cpu, requested LowPower)
+  [INFO  pocket_desktop_host::gpu] Pocket UI GPU: Vulkan / llvmpipe / Bgra8Unorm
+  READY 1793075865986
+  EXIT=0
+  ```
+  `READY` 与 `--quit-after 120` 正常退出，证明渲染循环与 tick 调度工作。
+- 截图证据：`xwd -root` 捕获 X root，转 PNG 压缩至 100,541 bytes（`pocketjs/screenshots/linux-native-hero.png`）。像素校验：800×500 中 348,100/400,000（87%）非黑像素，确有渲染内容，非空白。
+- 输入实测：后台启动 host，用 `xdotool` 向标题为 `PocketJS: Hero` 的窗口发送 `Right Right Down space`，再发 `ctrl+q`。进程在 `ctrl+q` 后退出（`exited after ctrl+q (input received)`），证明 native host 接收并处理键盘输入（winit KeyboardInput → button_for → BTN）。
+
+## 结论
+
+- PocketJS 0.15.0 的 Linux native 路径**可用**：`linux-app` profile、desktop host（wgpu/winit）、打包与运行全部打通；本机以 Vulkan/llvmpipe 软件渲染运行，无需浏览器。
+- heya Guest 原先的浏览器全局 API（`window`/`requestAnimationFrame`）是 native 阻塞根因；迁移到 `after()`/`onFrame` 后已通过 linux-app 编译。
+- 限制：本机为软件渲染（llvmpipe），无物理 GPU；此验证不能代表目标设备（RG34XX）的 GPU 性能。阶段6/7 另测。
 
 ## 限制
 
