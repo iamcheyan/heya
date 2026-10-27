@@ -1,0 +1,53 @@
+{
+ "clock_ticks_per_sec": 100,
+ "scales": {
+  "6": {
+   "pocketjs_native": {
+    "rss_mb_avg": 123.4,
+    "rss_mb_max": 123.4,
+    "cpu_ticks_delta": 4,
+    "samples": 6,
+    "cpu_seconds": 0.04
+   },
+   "sdl2_heya": {
+    "rss_mb_avg": 125.7,
+    "rss_mb_max": 126.0,
+    "cpu_ticks_delta": 35,
+    "samples": 6,
+    "cpu_seconds": 0.35
+   }
+  },
+  "50": {
+   "pocketjs_native": {
+    "rss_mb_avg": 123.3,
+    "rss_mb_max": 123.3,
+    "cpu_ticks_delta": 3,
+    "samples": 6,
+    "cpu_seconds": 0.03
+   },
+   "sdl2_heya": {
+    "rss_mb_avg": 128.4,
+    "rss_mb_max": 129.2,
+    "cpu_ticks_delta": 35,
+    "samples": 6,
+    "cpu_seconds": 0.35
+   }
+  },
+  "100": {
+   "pocketjs_native": {
+    "rss_mb_avg": 123.3,
+    "rss_mb_max": 123.3,
+    "cpu_ticks_delta": 3,
+    "samples": 6,
+    "cpu_seconds": 0.03
+   },
+   "sdl2_heya": {
+    "rss_mb_avg": 129.0,
+    "rss_mb_max": 130.0,
+    "cpu_ticks_delta": 40,
+    "samples": 6,
+    "cpu_seconds": 0.4
+   }
+  }
+ }
+}
