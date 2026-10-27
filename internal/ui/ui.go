@@ -623,7 +623,7 @@ func (u *UI) renderSystemProfile(frame Frame, px func(int32) int32) {
 	}
 	u.fill(sdl.Rect{X: margin, Y: u.Height - px(48), W: u.Width - 2*margin, H: px(1)}, muted)
 	u.drawText("[B] BACK", margin, u.Height-px(34), muted)
-	u.textInBox("ROCKNIX HANDHELD", sdl.Rect{X: u.Width - margin - px(220), Y: u.Height - px(39), W: px(220), H: px(24)}, muted, false)
+	u.textInBox("KoroOS HANDHELD", sdl.Rect{X: u.Width - margin - px(220), Y: u.Height - px(39), W: px(220), H: px(24)}, muted, false)
 	u.ren.Present()
 }
 

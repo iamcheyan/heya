@@ -203,7 +203,7 @@ func aboutPage(opts options, host string) model.Page {
 func systemProfilePage(opts options, host string, status system.Status) model.Page {
 	if opts.dumpDir != "" {
 		return model.Page{Title: "System Profile", Items: []model.Item{
-			{Name: "OS", Value: "ROCKNIX (preview)"},
+			{Name: "OS", Value: "KoroOS (preview)"},
 			{Name: "Device", Value: demoHost},
 			{Name: "Kernel", Value: "Linux"},
 			{Name: "Architecture", Value: "aarch64"},
@@ -258,7 +258,7 @@ func systemProfilePage(opts options, host string, status system.Status) model.Pa
 		osName = os.Getenv("CFW_NAME")
 	}
 	if osName == "" {
-		osName = "ROCKNIX"
+		osName = "KoroOS"
 	}
 	device := readTrimmed("/proc/device-tree/model")
 	if device == "" {
