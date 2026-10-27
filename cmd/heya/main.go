@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -536,9 +538,49 @@ func runApp(path string, args []string, environment []string, directory string, 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = mergeEnvironment(os.Environ(), environment)
 	cmd.Dir = directory
-	if err := cmd.Run(); err != nil {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	defaults := []string{
+		"LOCPATH=/storage/.cache/locpath",
+		"LANG=en_US.UTF-8",
+		"LC_ALL=en_US.UTF-8",
+	}
+	env := mergeEnvironment(defaults, os.Environ())
+	for i, item := range env {
+		if item == "LANG=C" || item == "LANG=POSIX" || item == "LANG=" {
+			env[i] = "LANG=en_US.UTF-8"
+		}
+		if item == "LC_ALL=C" || item == "LC_ALL=POSIX" || item == "LC_ALL=" {
+			env[i] = "LC_ALL=en_US.UTF-8"
+		}
+	}
+	cmd.Env = mergeEnvironment(env, environment)
+
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "heya: %s: %v\n", path, err)
+		time.Sleep(1500 * time.Millisecond)
+		return
+	}
+
+	stopWatcher := input.StartExitComboWatcher(func() {
+		if opts.verbose {
+			fmt.Fprintf(os.Stderr, "heya: exit combo (START+SELECT) triggered for pid %d\n", cmd.Process.Pid)
+		}
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		time.AfterFunc(500*time.Millisecond, func() {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		})
+	})
+	defer stopWatcher()
+
+	if err := cmd.Wait(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+				return
+			}
+		}
 		fmt.Fprintf(os.Stderr, "heya: %s: %v\n", path, err)
 		// Give the user a moment to read the failure before the UI returns.
 		time.Sleep(1500 * time.Millisecond)
