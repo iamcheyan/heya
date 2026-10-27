@@ -1,0 +1,21 @@
+{
+  "name": "heya-pocketjs-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pocketjs/framework": "0.15.0",
+    "solid-js": "^1.9.9"
+  },
+  "devDependencies": {
+    "@pocketjs/cli": "0.15.0",
+    "playwright": "^1.64.1",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}
